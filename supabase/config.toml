@@ -1,0 +1,14 @@
+project_id = "vaccine-monitor"
+
+# ingest / line-webhook / check-alerts ไม่ใช้ JWT ของผู้ใช้
+#  - ingest: ยืนยันตัวตนด้วย api_key ของอุปกรณ์
+#  - line-webhook: ยืนยันด้วยลายเซ็น x-line-signature
+#  - check-alerts: ยืนยันด้วยหัวข้อ x-cron-secret
+[functions.ingest]
+verify_jwt = false
+
+[functions.line-webhook]
+verify_jwt = false
+
+[functions.check-alerts]
+verify_jwt = false

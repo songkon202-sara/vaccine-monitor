@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เฝ้าระวังตู้เย็นวัคซีน</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f6f9; --card: #ffffff; --text: #1c2430; --muted: #5d6877; --line: #dde2ea;
+    --ok: #12703a; --ok-bg: #e3f4ea; --bad: #b3261e; --bad-bg: #fde8e6;
+    --warn: #8a5300; --warn-bg: #fff1d6; --idle: #4a5565; --idle-bg: #e8ebf0;
+    --brand: #0b5cad; --brand-dark: #08457f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12171e; --card: #1b222c; --text: #e8edf3; --muted: #9aa6b5; --line: #2c3644;
+      --ok: #6ee09b; --ok-bg: #153524; --bad: #ff9a92; --bad-bg: #3a1a18;
+      --warn: #ffc56b; --warn-bg: #3a2c10; --idle: #b6c0cd; --idle-bg: #262f3b;
+      --brand: #6db3ff; --brand-dark: #9bcaff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Sarabun', system-ui, sans-serif; font-size: 16px; line-height: 1.5; }
+  [hidden] { display: none !important; }
+  button, input, select { font: inherit; }
+  button { cursor: pointer; }
+  .btn { min-height: 44px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 500; }
+  @media (prefers-color-scheme: dark) { .btn.primary { color: #0b1420; } }
+  .btn.small { min-height: 36px; padding: 4px 12px; font-size: 14px; }
+  .btn.danger { color: var(--bad); }
+  input, select { min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); width: 100%; }
+  label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
+
+  /* login */
+  .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+  .login form { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; width: 100%; max-width: 380px; display: grid; gap: 14px; }
+  .login h1 { margin: 0 0 4px; font-size: 22px; }
+  .msg-err { color: var(--bad); font-size: 14px; min-height: 20px; }
+
+  /* header */
+  header.top { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  .top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; max-width: 1000px; margin: 0 auto; }
+  .top-row h1 { font-size: 18px; margin: 0; }
+  .who { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  nav.tabs { display: flex; gap: 4px; max-width: 1000px; margin: 0 auto; padding: 0 12px; overflow-x: auto; }
+  nav.tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px; min-height: 44px; color: var(--muted); white-space: nowrap; }
+  nav.tabs button[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 700; }
+  .badge { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--bad); color: #fff; font-size: 12px; text-align: center; margin-left: 4px; }
+
+  /* cards */
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { margin: 0; font-size: 18px; }
+  .sub { color: var(--muted); font-size: 14px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 14px; font-weight: 500; }
+  .status.ok { background: var(--ok-bg); color: var(--ok); }
+  .status.bad { background: var(--bad-bg); color: var(--bad); }
+  .status.idle { background: var(--idle-bg); color: var(--idle); }
+  .big-temp { font-size: 40px; font-weight: 700; line-height: 1.1; margin: 10px 0 2px; }
+  .big-temp small { font-size: 18px; font-weight: 400; color: var(--muted); }
+  .chart-box { position: relative; height: 180px; margin-top: 12px; }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 14px; color: var(--muted); }
+  .head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+
+  /* alerts */
+  .alert { border-left: 5px solid var(--bad); }
+  .alert.recovery { border-left-color: var(--ok); }
+  .alert.acked { border-left-color: var(--line); opacity: .85; }
+  .alert pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0; font: inherit; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stack { display: grid; gap: 12px; }
+
+  /* lots */
+  form.lot { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; margin-bottom: 16px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); font-size: 15px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 13px; }
+  .pill { padding: 2px 8px; border-radius: 6px; font-size: 13px; white-space: nowrap; }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .empty { text-align: center; color: var(--muted); padding: 32px 8px; }
+  .foot { text-align: center; color: var(--muted); font-size: 13px; padding: 16px; }
+</style>
+</head>
+<body>
+
+<!-- หน้าล็อกอิน -->
+<div id="login" class="login" hidden>
+  <form id="login-form">
+    <div>
+      <h1>เฝ้าระวังตู้เย็นวัคซีน</h1>
+      <div class="sub">เข้าสู่ระบบสำหรับเจ้าหน้าที่</div>
+    </div>
+    <div><label for="email">อีเมล</label><input id="email" type="email" autocomplete="username" required></div>
+    <div><label for="password">รหัสผ่าน</label><input id="password" type="password" autocomplete="current-password" required></div>
+    <div id="login-err" class="msg-err" role="alert"></div>
+    <button class="btn primary" type="submit">เข้าสู่ระบบ</button>
+  </form>
+</div>
+
+<!-- แอป -->
+<div id="app" hidden>
+  <header class="top">
+    <div class="top-row">
+      <h1>🧊 เฝ้าระวังตู้เย็นวัคซีน</h1>
+      <div class="who"><span id="who"></span><button id="logout" class="btn small">ออกจากระบบ</button></div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="overview" aria-selected="true">ภาพรวม</button>
+      <button role="tab" data-tab="alerts" aria-selected="false">แจ้งเตือน<span id="alert-badge" class="badge" hidden></span></button>
+      <button role="tab" data-tab="lots" aria-selected="false">ทะเบียนวัคซีน</button>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="tab-overview">
+      <div id="overview" class="grid"></div>
+      <div class="foot">อัปเดตอัตโนมัติทุก 1 นาที · เส้นประคือช่วง 2–8°C · ช่วงที่กราฟขาดหมายถึงไม่ได้รับสัญญาณ</div>
+    </section>
+
+    <section id="tab-alerts" hidden>
+      <div class="toolbar">
+        <div class="sub">แจ้งเตือนล่าสุด 100 รายการ</div>
+        <button id="ack-all" class="btn small">รับทราบทั้งหมด</button>
+      </div>
+      <div id="alerts" class="stack"></div>
+    </section>
+
+    <section id="tab-lots" hidden>
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="margin-bottom:12px">เพิ่มล็อตวัคซีน</h2>
+        <form id="lot-form" class="lot">
+          <div><label for="lot-name">ชื่อวัคซีน</label><input id="lot-name" required maxlength="120"></div>
+          <div><label for="lot-no">Lot No.</label><input id="lot-no" required maxlength="60"></div>
+          <div><label for="lot-qty">จำนวน (ขวด/โดส)</label><input id="lot-qty" type="number" min="0" step="1" required></div>
+          <div><label for="lot-exp">วันหมดอายุ</label><input id="lot-exp" type="date" required></div>
+          <div><label for="lot-device">เก็บในตู้</label><select id="lot-device"></select></div>
+          <div><label for="lot-note">หมายเหตุ</label><input id="lot-note" maxlength="200"></div>
+          <div><button class="btn primary" type="submit" style="width:100%">บันทึก</button></div>
+        </form>
+        <div id="lot-err" class="msg-err" role="alert"></div>
+      </div>
+      <div class="toolbar">
+        <div class="sub">เรียงตามวันหมดอายุ (ใกล้สุดก่อน)</div>
+        <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="show-inactive" type="checkbox" style="width:auto;min-height:0"> แสดงรายการที่ตัดออกแล้ว</label>
+      </div>
+      <div class="card table-wrap">
+        <table>
+          <thead><tr><th>วัคซีน</th><th>Lot</th><th>จำนวน</th><th>วันหมดอายุ</th><th>ตู้</th><th></th></tr></thead>
+          <tbody id="lots"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+  'use strict';
+  const cfg = window.APP_CONFIG || {};
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const TZ = 'Asia/Bangkok';
+
+  if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes('PROJECT_REF')) {
+    document.body.innerHTML = '<p style="padding:24px">ยังไม่ได้ตั้งค่า docs/config.js (SUPABASE_URL และ SUPABASE_ANON_KEY)</p>';
+    return;
+  }
+  const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+
+  const STATUS = {
+    ok: { label: 'ปกติ', icon: '🟢', cls: 'ok' },
+    offline: { label: 'ขาดสัญญาณ / อาจไฟดับ', icon: '🔴', cls: 'bad' },
+    temp_high: { label: 'อุณหภูมิสูงเกิน', icon: '🔴', cls: 'bad' },
+    temp_low: { label: 'อุณหภูมิต่ำเกิน', icon: '🔴', cls: 'bad' },
+    unknown: { label: 'ยังไม่มีข้อมูล', icon: '⚪', cls: 'idle' },
+  };
+  const DEVICE_COLS = 'id,name,location,min_temp,max_temp,last_seen,last_temp,status,status_since';
+
+  let user = null;
+  let devices = [];
+  let charts = [];
+  let currentTab = 'overview';
+  let timer = null;
+
+  const fmt = (iso) => iso ? new Date(iso).toLocaleString('th-TH', { timeZone: TZ, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString('th-TH', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+  function ago(iso) {
+    if (!iso) return 'ยังไม่เคยส่งข้อมูล';
+    const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    if (m < 1) return 'เมื่อสักครู่';
+    if (m < 60) return `${m} นาทีที่แล้ว`;
+    if (m < 1440) return `${Math.floor(m / 60)} ชม. ${m % 60} นาทีที่แล้ว`;
+    return `${Math.floor(m / 1440)} วันที่แล้ว`;
+  }
+  function daysUntil(dateStr) {
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+    return Math.round((Date.parse(dateStr + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400e3);
+  }
+  const thDate = (d) => new Date(d + 'T00:00:00Z').toLocaleDateString('th-TH', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
+
+  // ---------- auth ----------
+  $('#login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#login-err').textContent = '';
+    const { error } = await sb.auth.signInWithPassword({ email: $('#email').value.trim(), password: $('#password').value });
+    if (error) $('#login-err').textContent = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+  });
+  $('#logout').addEventListener('click', () => sb.auth.signOut());
+
+  sb.auth.onAuthStateChange((_evt, session) => {
+    user = session?.user ?? null;
+    $('#login').hidden = !!user;
+    $('#app').hidden = !user;
+    clearInterval(timer);
+    destroyCharts();
+    if (user) {
+      $('#who').textContent = user.email;
+      refresh();
+      timer = setInterval(refresh, 60000);
+    }
+  });
+  sb.auth.getSession().then(({ data }) => { if (!data.session) $('#login').hidden = false; });
+
+  // ---------- tabs ----------
+  document.querySelectorAll('nav.tabs button').forEach((b) => b.addEventListener('click', () => {
+    currentTab = b.dataset.tab;
+    document.querySelectorAll('nav.tabs button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    for (const t of ['overview', 'alerts', 'lots']) $('#tab-' + t).hidden = t !== currentTab;
+    refresh();
+  }));
+
+  async function refresh() {
+    try {
+      await loadDevices();
+      await loadAlertBadge();
+      if (currentTab === 'overview') await renderOverview();
+      if (currentTab === 'alerts') await renderAlerts();
+      if (currentTab === 'lots') await renderLots();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function loadDevices() {
+    const { data, error } = await sb.from('devices').select(DEVICE_COLS).eq('active', true).order('id');
+    if (error) throw error;
+    devices = data || [];
+    $('#lot-device').innerHTML = '<option value="">ไม่ระบุ</option>' + devices.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+  }
+
+  async function loadAlertBadge() {
+    const { count } = await sb.from('alerts').select('id', { count: 'exact', head: true }).is('acked_at', null).neq('kind', 'recovery');
+    const b = $('#alert-badge');
+    b.hidden = !count;
+    b.textContent = count || '';
+  }
+
+  // ---------- overview ----------
+  function destroyCharts() { charts.forEach((c) => c.destroy()); charts = []; }
+
+  function series(rows) {
+    const pts = [];
+    let prev = null;
+    for (const r of rows) {
+      const x = Date.parse(r.created_at);
+      if (prev !== null && x - prev > 15 * 60000) pts.push({ x: prev + 1, y: null });
+      pts.push({ x, y: Number(r.temp) });
+      prev = x;
+    }
+    return pts;
+  }
+
+  async function renderOverview() {
+    destroyCharts();
+    const box = $('#overview');
+    if (!devices.length) { box.innerHTML = '<div class="empty">ยังไม่มีตู้เย็นในระบบ</div>'; return; }
+    const since = new Date(Date.now() - 24 * 3600e3).toISOString();
+    const results = await Promise.all(devices.map((d) =>
+      sb.from('readings').select('temp,created_at').eq('device_id', d.id).gte('created_at', since).order('created_at', { ascending: true }).limit(1000)));
+
+    box.innerHTML = devices.map((d, i) => {
+      const s = STATUS[d.status] || STATUS.unknown;
+      const temps = (results[i].data || []).map((r) => Number(r.temp));
+      const hi = temps.length ? Math.max(...temps).toFixed(1) : '-';
+      const lo = temps.length ? Math.min(...temps).toFixed(1) : '-';
+      const t = d.last_temp === null ? '-' : Number(d.last_temp).toFixed(1);
+      return `<article class="card">
+        <div class="head-row">
+          <div><h2>${esc(d.name)}</h2><div class="sub">${esc(d.location || '')}</div></div>
+          <span class="status ${s.cls}">${s.icon} ${esc(s.label)}</span>
+        </div>
+        <div class="big-temp">${t}<small> °C</small></div>
+        <div class="sub">ข้อมูลล่าสุด ${esc(ago(d.last_seen))} (${esc(fmt(d.last_seen))})</div>
+        <div class="stats"><span>สูงสุด 24 ชม.: ${hi}°C</span><span>ต่ำสุด 24 ชม.: ${lo}°C</span><span>${temps.length} ค่า</span></div>
+        <div class="chart-box"><canvas id="chart-${i}" aria-label="กราฟอุณหภูมิ 24 ชั่วโมงของ ${esc(d.name)}" role="img"></canvas></div>
+      </article>`;
+    }).join('');
+
+    const now = Date.now(), from = now - 24 * 3600e3;
+    devices.forEach((d, i) => {
+      const ctx = document.getElementById('chart-' + i);
+      const range = (y) => ({ borderColor: '#9aa6b5', borderDash: [6, 4], borderWidth: 1, pointRadius: 0, data: [{ x: from, y }, { x: now, y }] });
+      charts.push(new Chart(ctx, {
+        type: 'line',
+        data: { datasets: [
+          { data: series(results[i].data || []), borderColor: '#0b6bcb', borderWidth: 2, pointRadius: 0, spanGaps: false, tension: 0.2 },
+          range(Number(d.min_temp)), range(Number(d.max_temp)),
+        ] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { title: (it) => hhmm(it[0].parsed.x), label: (it) => `${it.parsed.y}°C` } } },
+          scales: {
+            x: { type: 'linear', min: from, max: now, ticks: { maxTicksLimit: 7, callback: (v) => hhmm(v) } },
+            y: { suggestedMin: 0, suggestedMax: 10, title: { display: true, text: '°C' } },
+          },
+        },
+      }));
+    });
+  }
+
+  // ---------- alerts ----------
+  async function renderAlerts() {
+    const { data, error } = await sb.from('alerts').select('id,device_id,kind,message,created_at,acked_at,acked_by').order('created_at', { ascending: false }).limit(100);
+    if (error) throw error;
+    const names = Object.fromEntries(devices.map((d) => [d.id, d.name]));
+    const box = $('#alerts');
+    if (!data.length) { box.innerHTML = '<div class="empty">ยังไม่มีแจ้งเตือน</div>'; return; }
+    box.innerHTML = data.map((a) => {
+      const open = !a.acked_at && a.kind !== 'recovery';
+      const cls = a.kind === 'recovery' ? 'recovery' : open ? '' : 'acked';
+      const state = a.kind === 'recovery' ? '<span class="pill ok">กลับสู่ปกติ</span>'
+        : open ? '<span class="pill bad">รอรับทราบ</span>'
+        : `<span class="pill ok">รับทราบแล้ว${a.acked_by ? ' · ' + esc(a.acked_by) : ''}</span>`;
+      return `<article class="card alert ${cls}">
+        <div class="head-row"><strong>${esc(names[a.device_id] || a.device_id || '-')}</strong><span class="sub">${esc(fmt(a.created_at))}</span></div>
+        <pre>${esc(a.message)}</pre>
+        <div class="head-row">${state}${open ? `<button class="btn small" data-ack="${a.id}">รับทราบ</button>` : ''}</div>
+      </article>`;
+    }).join('');
+  }
+
+  $('#alerts').addEventListener('click', async (e) => {
+    const id = e.target.closest('[data-ack]')?.dataset.ack;
+    if (!id) return;
+    const { error } = await sb.from('alerts').update({ acked_at: new Date().toISOString(), acked_by: user.email }).eq('id', Number(id)).is('acked_at', null);
+    if (error) alert('บันทึกไม่สำเร็จ: ' + error.message);
+    refresh();
+  });
+  $('#ack-all').addEventListener('click', async () => {
+    if (!confirm('รับทราบแจ้งเตือนที่ค้างอยู่ทั้งหมด?')) return;
+    const { error } = await sb.from('alerts').update({ acked_at: new Date().toISOString(), acked_by: user.email }).is('acked_at', null).neq('kind', 'recovery');
+    if (error) alert('บันทึกไม่สำเร็จ: ' + error.message);
+    refresh();
+  });
+
+  // ---------- vaccine lots ----------
+  async function renderLots() {
+    let q = sb.from('vaccine_lots').select('*').order('expiry_date', { ascending: true });
+    if (!$('#show-inactive').checked) q = q.eq('active', true);
+    const { data, error } = await q;
+    if (error) throw error;
+    const names = Object.fromEntries(devices.map((d) => [d.id, d.name]));
+    const body = $('#lots');
+    if (!data.length) { body.innerHTML = '<tr><td colspan="6" class="empty">ยังไม่มีข้อมูลล็อตวัคซีน</td></tr>'; return; }
+    body.innerHTML = data.map((l) => {
+      const d = daysUntil(l.expiry_date);
+      const pill = !l.active ? '<span class="pill warn">ตัดออกแล้ว</span>'
+        : d < 0 ? `<span class="pill bad">หมดอายุแล้ว ${-d} วัน</span>`
+        : d === 0 ? '<span class="pill bad">หมดอายุวันนี้</span>'
+        : d <= 30 ? `<span class="pill bad">อีก ${d} วัน</span>`
+        : d <= 90 ? `<span class="pill warn">อีก ${d} วัน</span>`
+        : `<span class="pill ok">อีก ${d} วัน</span>`;
+      const actions = l.active
+        ? `<button class="btn small" data-qty="${l.id}" data-cur="${l.qty}">แก้จำนวน</button><button class="btn small danger" data-off="${l.id}">ตัดออก</button>`
+        : `<button class="btn small" data-on="${l.id}">กู้คืน</button>`;
+      return `<tr>
+        <td><strong>${esc(l.vaccine_name)}</strong>${l.note ? `<div class="sub">${esc(l.note)}</div>` : ''}</td>
+        <td>${esc(l.lot_no)}</td><td>${esc(l.qty)}</td>
+        <td>${esc(thDate(l.expiry_date))}<div>${pill}</div></td>
+        <td>${esc(names[l.device_id] || '-')}</td>
+        <td><div class="row-actions">${actions}</div></td></tr>`;
+    }).join('');
+  }
+  $('#show-inactive').addEventListener('change', renderLots);
+
+  $('#lot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#lot-err').textContent = '';
+    const qty = Number($('#lot-qty').value);
+    if (!Number.isInteger(qty) || qty < 0) { $('#lot-err').textContent = 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป'; return; }
+    const { error } = await sb.from('vaccine_lots').insert({
+      vaccine_name: $('#lot-name').value.trim(), lot_no: $('#lot-no').value.trim(), qty,
+      expiry_date: $('#lot-exp').value, device_id: $('#lot-device').value || null,
+      note: $('#lot-note').value.trim() || null,
+    });
+    if (error) { $('#lot-err').textContent = 'บันทึกไม่สำเร็จ: ' + error.message; return; }
+    e.target.reset();
+    renderLots();
+  });
+
+  $('#lots').addEventListener('click', async (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    let res;
+    if (t.dataset.qty) {
+      const v = prompt('จำนวนคงเหลือ', t.dataset.cur);
+      if (v === null) return;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0) { alert('จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป'); return; }
+      res = await sb.from('vaccine_lots').update({ qty: n }).eq('id', t.dataset.qty);
+    } else if (t.dataset.off) {
+      if (!confirm('ตัดล็อตนี้ออกจากทะเบียน (ใช้หมด/ทิ้ง)?')) return;
+      res = await sb.from('vaccine_lots').update({ active: false }).eq('id', t.dataset.off);
+    } else if (t.dataset.on) {
+      res = await sb.from('vaccine_lots').update({ active: true }).eq('id', t.dataset.on);
+    } else return;
+    if (res.error) alert('บันทึกไม่สำเร็จ: ' + res.error.message);
+    renderLots();
+  });
+})();
+</script>
+</body>
+</html>

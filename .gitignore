@@ -1,0 +1,7 @@
+.env
+supabase/.env
+supabase/*.generated.sql
+supabase/.temp/
+firmware/**/secrets.h
+node_modules/
+.DS_Store
