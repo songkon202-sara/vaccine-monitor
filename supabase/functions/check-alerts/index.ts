@@ -145,18 +145,45 @@ async function trySend(a: AlertRow, currentStatus: Status): Promise<'sent' | 'wa
     return 'obsolete';
   }
 
-  // กันข้อความรัว (เช่น ไฟกระพริบ): ชนิดเดียวกันของตู้เดียวกัน ส่งได้ทุก COOLDOWN_MIN นาที
-  const since = new Date(Date.now() - COOLDOWN_MIN * 60000).toISOString();
-  const { count, error } = await sb
-    .from('alerts')
-    .select('id', { count: 'exact', head: true })
-    .eq('device_id', a.device_id!)
-    .eq('kind', a.kind)
-    .eq('push_status', 'sent')
-    .gte('sent_at', since)
-    .neq('id', a.id);
-  if (error) throw error;
-  if ((count ?? 0) > 0) return 'wait';
+  if (a.kind === 'recovery') {
+    // "กลับสู่ปกติ" ส่งทันที (ไม่ติด cooldown) แต่เฉพาะเมื่อกลุ่มเคยได้รับแจ้งเรื่องผิดปกติ
+    // ที่ยังไม่ได้บอกว่าจบ เพื่อไม่ส่งข้อความกลับสู่ปกติลอย ๆ ของเรื่องที่ไม่เคยถูกแจ้ง
+    const { data: lastRec, error: e1 } = await sb
+      .from('alerts')
+      .select('sent_at')
+      .eq('device_id', a.device_id!)
+      .eq('kind', 'recovery')
+      .eq('push_status', 'sent')
+      .order('sent_at', { ascending: false })
+      .limit(1);
+    if (e1) throw e1;
+    let q = sb
+      .from('alerts')
+      .select('id', { count: 'exact', head: true })
+      .eq('device_id', a.device_id!)
+      .neq('kind', 'recovery')
+      .eq('push_status', 'sent');
+    if (lastRec?.[0]?.sent_at) q = q.gt('sent_at', lastRec[0].sent_at);
+    const { count, error: e2 } = await q;
+    if (e2) throw e2;
+    if (!count) {
+      await sb.from('alerts').update({ push_status: 'obsolete' }).eq('id', a.id);
+      return 'obsolete';
+    }
+  } else {
+    // กันข้อความรัว (เช่น ไฟกระพริบ): แจ้งเตือนชนิดเดียวกันของตู้เดียวกัน ส่งได้ทุก COOLDOWN_MIN นาที
+    const since = new Date(Date.now() - COOLDOWN_MIN * 60000).toISOString();
+    const { count, error } = await sb
+      .from('alerts')
+      .select('id', { count: 'exact', head: true })
+      .eq('device_id', a.device_id!)
+      .eq('kind', a.kind)
+      .eq('push_status', 'sent')
+      .gte('sent_at', since)
+      .neq('id', a.id);
+    if (error) throw error;
+    if ((count ?? 0) > 0) return 'wait';
+  }
 
   const groupId = await getGroupId();
   if (!groupId) return 'failed';
