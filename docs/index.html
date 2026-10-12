@@ -89,6 +89,19 @@
   .empty { text-align: center; color: var(--muted); padding: 32px 8px; }
   .foot { text-align: center; color: var(--muted); font-size: 13px; padding: 16px; }
 
+
+  /* quality tab */
+  .q-pass { color: var(--ok); font-weight: 700; }
+  .q-fail { color: var(--bad); font-weight: 700; }
+  table.cmp { min-width: 900px; border-collapse: collapse; width: 100%; }
+  table.cmp th, table.cmp td { padding: 4px 2px; text-align: center; font-size: 11px; border-bottom: 1px solid var(--line); }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; font-size: 13px; white-space: nowrap; padding-right: 8px; }
+  table.cmp td.c-ok { background: var(--ok-bg); color: var(--ok); }
+  table.cmp td.c-warn { background: var(--warn-bg); color: var(--warn); }
+  table.cmp td.c-bad { background: var(--bad-bg); color: var(--bad); font-weight: 700; }
+  table.cmp td.c-na { color: var(--muted); }
+  .sql { font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: var(--idle-bg); padding: 6px 8px; border-radius: 6px; word-break: break-all; display: block; margin-top: 6px; }
+
   /* monthly report (แบบบันทึกอุณหภูมิ) */
   .report-tools { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; margin-bottom: 16px; }
   .paper { background: #fff; color: #000; border-radius: 8px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
@@ -145,6 +158,7 @@
       <button role="tab" data-tab="alerts" aria-selected="false">แจ้งเตือน<span id="alert-badge" class="badge" hidden></span></button>
       <button role="tab" data-tab="lots" aria-selected="false">ทะเบียนวัคซีน</button>
       <button role="tab" data-tab="report" aria-selected="false">แบบบันทึกอุณหภูมิ</button>
+      <button role="tab" data-tab="quality" aria-selected="false">คุณภาพการวัด</button>
     </nav>
   </header>
 
@@ -198,6 +212,37 @@
         <div class="sub">ระบบเลือกค่าที่วัดได้ใกล้เวลา 08:30 และ 15:30 น. ที่สุด (ภายใน ±15 นาที) แล้วกากบาทลงช่องอุณหภูมิ (ปัดเป็นจำนวนเต็ม ค่าที่อยู่นอกเกณฑ์ของตู้จะไม่ถูกปัดเข้าช่องปกติ) ช่องสีเหลืองคือช่วงที่ต้องตรวจสอบ</div>
       </div>
       <div id="report"></div>
+    </section>
+
+    <section id="tab-quality" hidden>
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="margin-bottom:4px">ตรวจเทียบกับเทอร์โมมิเตอร์มาตรฐาน</h2>
+        <div class="sub" style="margin-bottom:12px">วางเทอร์โมมิเตอร์มาตรฐานติดขวดหัววัด รอให้คงที่ แล้วกรอกค่าที่อ่านได้และเวลาที่อ่าน ระบบจะดึงค่าเซนเซอร์ที่ใกล้เวลานั้นที่สุด (±10 นาที) มาเทียบ เกณฑ์ผ่าน: ช่องเย็น ±0.5°C, ช่องแช่แข็ง ±1.0°C</div>
+        <form id="cal-form" class="lot">
+          <div><label for="cal-device">ช่อง</label><select id="cal-device" required></select></div>
+          <div><label for="cal-ref">ค่าเทอร์โมมิเตอร์มาตรฐาน (°C)</label><input id="cal-ref" type="number" step="0.1" min="-40" max="40" required></div>
+          <div><label for="cal-time">เวลาที่อ่าน</label><input id="cal-time" type="datetime-local" required></div>
+          <div><label for="cal-note">หมายเหตุ</label><input id="cal-note" maxlength="200" placeholder="เช่น เทอร์โมมิเตอร์หมายเลข..."></div>
+          <div><button class="btn primary" type="submit" style="width:100%">บันทึกการตรวจเทียบ</button></div>
+        </form>
+        <div id="cal-err" class="msg-err" role="alert"></div>
+      </div>
+      <div id="cal-summary" class="grid" style="margin-bottom:16px"></div>
+      <div class="card table-wrap" style="margin-bottom:16px">
+        <h2 style="margin-bottom:8px">ประวัติการตรวจเทียบ</h2>
+        <table>
+          <thead><tr><th>เวลาที่อ่าน</th><th>ช่อง</th><th>มาตรฐาน</th><th>เซนเซอร์</th><th>ส่วนต่าง</th><th>ผล</th><th>ผู้ตรวจ / หมายเหตุ</th></tr></thead>
+          <tbody id="cal-list"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0">ความครบของข้อมูล</h2>
+          <input id="cmp-month" type="month" style="width:auto">
+        </div>
+        <div class="sub" style="margin-bottom:8px">ร้อยละของค่าที่ได้รับเทียบกับที่ควรได้ (ส่งทุก 5 นาที = 288 ค่า/วัน) · เขียว ≥ 98% · เหลือง 90–97% · แดง &lt; 90% (เช่น ไฟดับ เน็ตหลุด) · "–" = ยังไม่ติดตั้ง/ยังไม่ถึงวัน</div>
+        <div class="table-wrap"><table class="cmp" id="cmp-table"></table></div>
+      </div>
     </section>
   </main>
 </div>
@@ -277,8 +322,9 @@
   document.querySelectorAll('nav.tabs button').forEach((b) => b.addEventListener('click', () => {
     currentTab = b.dataset.tab;
     document.querySelectorAll('nav.tabs button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
-    for (const t of ['overview', 'alerts', 'lots', 'report']) $('#tab-' + t).hidden = t !== currentTab;
+    for (const t of ['overview', 'alerts', 'lots', 'report', 'quality']) $('#tab-' + t).hidden = t !== currentTab;
     reportShown = false;
+    qualityShown = false;
     refresh();
   }));
 
@@ -290,6 +336,7 @@
       if (currentTab === 'alerts') await renderAlerts();
       if (currentTab === 'lots') await renderLots();
       if (currentTab === 'report' && !reportShown) await renderReport();
+      if (currentTab === 'quality' && !qualityShown) await renderQuality();
     } catch (e) {
       console.error(e);
     }
@@ -599,6 +646,131 @@
   $('#rep-device').addEventListener('change', renderReport);
   $('#rep-month').addEventListener('change', renderReport);
   $('#rep-print').addEventListener('click', () => window.print());
+
+  // ---------- measurement quality (คุณภาพการวัด) ----------
+  const SENDS_PER_DAY = 288;            // ESP32 ส่งทุก 5 นาที
+  const CAL_MATCH_MIN = 10;             // หาค่าเซนเซอร์ภายใน ±10 นาทีจากเวลาที่อ่านเทอร์โมมิเตอร์
+  const CAL_SUGGEST_N = 3;              // ใช้การตรวจล่าสุดกี่ครั้งในการแนะนำค่าชดเชย
+  let qualityShown = false;
+  let calDevices = [];
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const sign = (n) => (n > 0 ? '+' : '') + n.toFixed(2);
+  const toleranceOf = (d) => (Number(d.max_temp) < 0 ? 1.0 : 0.5);
+
+  function localInputNow() {
+    const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  }
+
+  async function renderQuality() {
+    const { data: devs, error } = await sb.from('devices').select('id,name,min_temp,max_temp,temp_offset').eq('active', true).order('id');
+    if (error) throw error;
+    calDevices = devs || [];
+    const sel = $('#cal-device'), keep = sel.value;
+    sel.innerHTML = calDevices.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+    if (keep) sel.value = keep;
+    if (!$('#cal-time').value) $('#cal-time').value = localInputNow();
+    if (!$('#cmp-month').value) $('#cmp-month').value = bangkokMonth();
+    await Promise.all([renderCalibration(), renderCompleteness()]);
+    qualityShown = true;
+  }
+
+  async function renderCalibration() {
+    const { data, error } = await sb.from('calibration_checks')
+      .select('device_id,checked_at,ref_temp,sensor_temp,raw_temp,diff,tolerance,passed,note,checked_by')
+      .order('checked_at', { ascending: false }).limit(200);
+    if (error) throw error;
+    const names = Object.fromEntries(calDevices.map((d) => [d.id, d.name]));
+    const rows = data || [];
+    $('#cal-list').innerHTML = rows.length ? rows.map((c) => `<tr>
+        <td>${esc(fmt(c.checked_at))}</td><td>${esc(names[c.device_id] || c.device_id)}</td>
+        <td>${Number(c.ref_temp).toFixed(1)}°C</td>
+        <td>${c.sensor_temp === null ? '-' : Number(c.sensor_temp).toFixed(2) + '°C'}</td>
+        <td>${c.diff === null ? '-' : sign(Number(c.diff))}</td>
+        <td>${c.passed === null ? '-' : c.passed ? '<span class="q-pass">ผ่าน</span>' : '<span class="q-fail">ไม่ผ่าน</span>'} <span class="sub">(±${Number(c.tolerance).toFixed(1)})</span></td>
+        <td>${esc(c.checked_by || '-')}${c.note ? `<div class="sub">${esc(c.note)}</div>` : ''}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="empty">ยังไม่มีการตรวจเทียบ</td></tr>';
+
+    // สรุปต่อช่อง + ค่าชดเชยที่แนะนำ (เฉลี่ย ref - raw ของการตรวจล่าสุด)
+    $('#cal-summary').innerHTML = calDevices.map((d) => {
+      const mine = rows.filter((c) => c.device_id === d.id && c.raw_temp !== null);
+      const all = rows.filter((c) => c.device_id === d.id);
+      const cur = Number(d.temp_offset) || 0;
+      if (!all.length) return `<article class="card"><h2>${esc(d.name)}</h2><div class="sub">ยังไม่เคยตรวจเทียบ · ค่าชดเชยปัจจุบัน ${sign(cur)}°C</div></article>`;
+      const passN = all.filter((c) => c.passed).length;
+      const last = mine.slice(0, CAL_SUGGEST_N);
+      let advice = '';
+      if (last.length) {
+        const sugg = r2(last.reduce((a, c) => a + (Number(c.ref_temp) - Number(c.raw_temp)), 0) / last.length);
+        const need = Math.abs(sugg - cur) >= 0.1;
+        advice = `<div style="margin-top:6px">ค่าชดเชยปัจจุบัน ${sign(cur)}°C · แนะนำ <strong>${sign(sugg)}°C</strong> <span class="sub">(จาก ${last.length} ครั้งล่าสุด${last.length < CAL_SUGGEST_N ? ` ควรตรวจให้ครบ ${CAL_SUGGEST_N} ครั้งก่อนปรับ` : ''})</span></div>`
+          + (need ? `<div class="sub">ปรับได้ใน Supabase SQL Editor:</div><code class="sql">update public.devices set temp_offset = ${sugg} where id = '${esc(d.id)}';</code>` : '<div class="sub">ค่าชดเชยเหมาะสมแล้ว</div>');
+      }
+      return `<article class="card"><h2>${esc(d.name)}</h2>
+        <div class="sub">ตรวจแล้ว ${all.length} ครั้ง · ผ่าน ${passN} (${Math.round(passN / all.length * 100)}%) · ล่าสุด ${esc(fmt(all[0].checked_at))}</div>${advice}</article>`;
+    }).join('');
+  }
+
+  $('#cal-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#cal-err').textContent = '';
+    const dev = calDevices.find((d) => d.id === $('#cal-device').value);
+    const ref = Number($('#cal-ref').value);
+    const at = new Date($('#cal-time').value);
+    if (!dev || !Number.isFinite(ref) || isNaN(at)) { $('#cal-err').textContent = 'กรอกข้อมูลให้ครบ'; return; }
+    if (at.getTime() > Date.now() + 60000) { $('#cal-err').textContent = 'เวลาที่อ่านต้องไม่อยู่ในอนาคต'; return; }
+    const w = CAL_MATCH_MIN * 60000;
+    const { data: rs, error } = await sb.from('readings').select('temp,raw_temp,created_at').eq('device_id', dev.id)
+      .gte('created_at', new Date(at.getTime() - w).toISOString()).lte('created_at', new Date(at.getTime() + w).toISOString()).limit(50);
+    if (error) { $('#cal-err').textContent = 'โหลดค่าเซนเซอร์ไม่สำเร็จ: ' + error.message; return; }
+    if (!rs || !rs.length) { $('#cal-err').textContent = `ไม่พบค่าจากเซนเซอร์ภายใน ±${CAL_MATCH_MIN} นาทีของเวลาที่อ่าน ตรวจว่าเซนเซอร์ส่งข้อมูลอยู่ หรือแก้เวลาให้ตรง`; return; }
+    const best = rs.reduce((a, r) => (Math.abs(Date.parse(r.created_at) - at) < Math.abs(Date.parse(a.created_at) - at) ? r : a));
+    const sensor = Number(best.temp);
+    const raw = best.raw_temp === null ? r2(sensor - (Number(dev.temp_offset) || 0)) : Number(best.raw_temp);
+    const tol = toleranceOf(dev), diff = r2(ref - sensor);
+    const { error: e2 } = await sb.from('calibration_checks').insert({
+      device_id: dev.id, checked_at: at.toISOString(), ref_temp: ref, sensor_temp: sensor, raw_temp: raw,
+      reading_at: best.created_at, diff, tolerance: tol, passed: Math.abs(diff) <= tol,
+      note: $('#cal-note').value.trim() || null,
+    });
+    if (e2) { $('#cal-err').textContent = 'บันทึกไม่สำเร็จ: ' + e2.message; return; }
+    $('#cal-ref').value = ''; $('#cal-note').value = ''; $('#cal-time').value = localInputNow();
+    await renderCalibration();
+  });
+
+  async function renderCompleteness() {
+    const box = $('#cmp-table');
+    const [y, mo] = $('#cmp-month').value.split('-').map(Number);
+    if (!y || !mo) { box.innerHTML = ''; return; }
+    const from = Date.UTC(y, mo - 1, 1) - 7 * 3600e3, to = Date.UTC(y, mo, 1) - 7 * 3600e3;   // ขอบเขตเดือนตามเวลาไทย
+    const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    const { data, error } = await sb.rpc('reading_counts', { p_from: new Date(from).toISOString(), p_to: new Date(to).toISOString() });
+    if (error) { box.innerHTML = `<tr><td class="empty">โหลดไม่สำเร็จ: ${esc(error.message)}</td></tr>`; return; }
+    const cnt = {};
+    for (const r of data || []) cnt[r.device_id + '|' + String(r.day).slice(8, 10).replace(/^0/, '')] = Number(r.n);
+    const now = Date.now();
+    const expectedOn = (d) => {
+      const start = Date.UTC(y, mo - 1, d) - 7 * 3600e3, end = start + 86400e3;
+      if (now <= start) return 0;
+      return Math.floor((Math.min(now, end) - start) / 300000);
+    };
+    const head = '<tr><th>ช่อง</th>' + Array.from({ length: days }, (_, i) => `<th>${i + 1}</th>`).join('') + '<th>ทั้งเดือน</th></tr>';
+    const body = calDevices.map((dv) => {
+      let started = false, got = 0, exp = 0;
+      const cells = Array.from({ length: days }, (_, i) => {
+        const d = i + 1, n = cnt[dv.id + '|' + d] || 0, e = expectedOn(d);
+        if (n > 0) started = true;
+        if (!e || (!started && n === 0)) return '<td class="c-na">–</td>';
+        got += Math.min(n, e); exp += e;
+        const p = Math.min(100, Math.floor((n / e) * 100));
+        return `<td class="${p >= 98 ? 'c-ok' : p >= 90 ? 'c-warn' : 'c-bad'}" title="${n}/${e} ค่า">${p}</td>`;
+      }).join('');
+      const tot = exp ? Math.floor((got / exp) * 1000) / 10 : null;
+      return `<tr><td>${esc(dv.name)}</td>${cells}<td><strong>${tot === null ? '–' : tot + '%'}</strong></td></tr>`;
+    }).join('');
+    box.innerHTML = head + body;
+  }
+  $('#cmp-month').addEventListener('change', renderCompleteness);
 })();
 </script>
 </body>
