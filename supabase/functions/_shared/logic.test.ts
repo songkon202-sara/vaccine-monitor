@@ -41,6 +41,19 @@ assert.equal(decideStatus(dev({ status: 'offline' }), [5], NOW), 'ok');
 assert.equal(decideStatus(dev({ status: 'offline' }), [], NOW), 'ok', 'สัญญาณกลับมาแต่ยังไม่มีค่าในหน้าต่าง');
 assert.equal(decideStatus(dev(), [8], NOW), 'ok', 'ขอบ 8.0 ยังอยู่ในช่วง');
 assert.equal(decideStatus(dev(), [2, 2], NOW), 'ok', 'ขอบ 2.0 ยังอยู่ในช่วง');
+// ข้อมูลในช่วงตรวจไม่พอ (เช่น หายไป 1 รอบ) ต้องไม่ประกาศกลับสู่ปกติทั้งที่ค่าล่าสุดยังผิดช่วง
+assert.equal(decideStatus(dev({ status: 'temp_high', last_temp: 9.6 }), [], NOW), 'temp_high', 'ไม่มีค่าในหน้าต่าง + ค่าล่าสุดยังสูง');
+assert.equal(decideStatus(dev({ status: 'temp_high', last_temp: 9.6 }), [9.6], NOW), 'temp_high', 'ค่าเดียวในหน้าต่างและยังสูง');
+assert.equal(decideStatus(dev({ status: 'temp_low', last_temp: 1.1 }), [], NOW), 'temp_low');
+assert.equal(decideStatus(dev({ status: 'temp_high', last_temp: 5.0 }), [5.0], NOW), 'ok', 'ค่าล่าสุดกลับเข้าช่วงแล้ว');
+assert.equal(decideStatus(dev({ status: 'temp_high', last_temp: 9.4 }), [5.0, 9.4], NOW), 'temp_high', 'ค่าปนกันแต่ล่าสุดยังสูง ไม่ประกาศปกติ');
+assert.equal(decideStatus(dev({ status: 'offline', last_temp: 9.9 }), [], NOW), 'temp_high', 'กลับจาก offline ค่าล่าสุดสูง');
+assert.equal(decideStatus(dev({ status: 'ok', last_temp: 9.6 }), [9.6], NOW), 'ok', 'ตู้ปกติ ค่าเดียวสูงยังไม่แจ้ง (เปิดตู้ชั่วคราว)');
+// ช่องแช่แข็ง -25 ถึง -15
+const fz = (over: Partial<DeviceRow> = {}) => dev({ min_temp: -25, max_temp: -15, temp_alert_after_min: 30, ...over });
+assert.equal(decideStatus(fz(), [-20, -19, -21], NOW), 'ok');
+assert.equal(decideStatus(fz(), [-12, -11], NOW), 'temp_high');
+assert.equal(decideStatus(fz({ status: 'temp_high', last_temp: -13 }), [], NOW), 'temp_high');
 
 // ---- buildTransition ----
 assert.equal(buildTransition('unknown', 'ok', dev(), NOW), null);

@@ -31,6 +31,8 @@ export const EXPIRY_THRESHOLDS = [90, 60, 30, 14, 7, 0];
  * - ไม่มีสัญญาณเกิน offline_after_min => offline
  * - ค่าที่วัดได้ในช่วง temp_alert_after_min ทุกค่าอยู่นอกช่วง (อย่างน้อย 2 ค่า) => temp_high / temp_low
  *   (ถ้าเพิ่งกลับมาจาก offline ใช้ 1 ค่าก็พอ เพื่อไม่ประกาศ "ปกติ" ทั้งที่ตู้ร้อนอยู่)
+ * - ถ้าค่าในช่วงตรวจไม่พอตัดสิน (เช่น ข้อมูลหาย 1 รอบ) และตู้ผิดปกติอยู่/เพิ่งกลับจาก offline
+ *   จะ "ไม่" ประกาศกลับสู่ปกติจนกว่าค่าล่าสุด (last_temp) จะอยู่ในช่วงจริง
  */
 export function decideStatus(d: DeviceRow, recentTemps: number[], nowMs: number): Status {
   if (!d.last_seen) return 'unknown';
@@ -40,6 +42,12 @@ export function decideStatus(d: DeviceRow, recentTemps: number[], nowMs: number)
   if (recentTemps.length >= need) {
     if (recentTemps.every((t) => t > d.max_temp)) return 'temp_high';
     if (recentTemps.every((t) => t < d.min_temp)) return 'temp_low';
+  }
+  // ตู้กำลังผิดปกติ (หรือเพิ่งกลับจาก offline): ต้องเห็นค่าล่าสุดอยู่ในช่วงก่อนจึงถือว่าปกติ
+  if (d.status === 'temp_high' || d.status === 'temp_low' || d.status === 'offline') {
+    const last = d.last_temp === null || d.last_temp === undefined ? NaN : Number(d.last_temp);
+    if (last > d.max_temp) return 'temp_high';
+    if (last < d.min_temp) return 'temp_low';
   }
   return 'ok';
 }
