@@ -17,6 +17,8 @@ import {
 //  2) ส่งแจ้งเตือนที่ค้างส่งเข้า LINE (ลองใหม่เองถ้าส่งไม่สำเร็จ)
 //  3) แจ้งซ้ำไปยังผู้รับผิดชอบเมื่อไม่มีใครรับทราบ
 //  4) แจ้งเตือนวัคซีนใกล้หมดอายุ (ช่วง 08:00–16:00 เวลาไทย)
+//  5) ส่ง heartbeat ไปยัง HEARTBEAT_URL (เช่น healthchecks.io) ถ้าระบบหยุดหรือส่ง LINE ไม่ได้
+//     บริการภายนอกจะเตือนทางอีเมล — เป็น "ตัวเฝ้าตัวเฝ้า" กรณีระบบเงียบไปเอง
 
 const COOLDOWN_MIN = Number(Deno.env.get('ALERT_COOLDOWN_MIN') ?? '30');
 const ESCALATE_AFTER_MIN = Number(Deno.env.get('ESCALATE_AFTER_MIN') ?? '20');
@@ -55,8 +57,24 @@ Deno.serve(async (req) => {
       stats.errors.push(`${name}: ${e instanceof Error ? e.message : JSON.stringify(e)}`);
     }
   }
+  await heartbeat(stats);
   return json(stats);
 });
+
+// รายงานผลไปยังบริการเฝ้าระบบภายนอก: มี error (รวมส่ง LINE ไม่สำเร็จ) -> /fail
+async function heartbeat(stats: Stats) {
+  const url = Deno.env.get('HEARTBEAT_URL');
+  if (!url) return;
+  try {
+    await fetch(stats.errors.length ? `${url.replace(/\/$/, '')}/fail` : url, {
+      method: 'POST',
+      body: JSON.stringify(stats),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch (e) {
+    console.error('heartbeat failed', e);
+  }
+}
 
 async function checkDevices(stats: Stats) {
   const now = Date.now();
@@ -171,6 +189,7 @@ async function flushUnsent(stats: Stats) {
     }
     const r = await trySend(a, statusOf.get(a.device_id) ?? 'unknown');
     if (r === 'sent') stats.sent++;
+    if (r === 'failed') stats.errors.push(`flush: ส่ง LINE ไม่สำเร็จ (alert ${a.id})`);
   }
 }
 
@@ -200,6 +219,8 @@ async function escalate(stats: Stats) {
     if (ok) {
       await sb.from('alerts').update({ escalated_at: new Date().toISOString() }).eq('id', a.id);
       stats.escalated++;
+    } else {
+      stats.errors.push(`escalate: ส่ง LINE ไม่สำเร็จ (alert ${a.id})`);
     }
   }
 }
@@ -238,8 +259,10 @@ async function checkExpiry(stats: Stats) {
   if (due.length === 0) return;
 
   const groupId = await getGroupId();
-  if (!groupId) return;
-  if (!(await pushTo(groupId, buildExpiryMessage(due.map((x) => x.item))))) return;
+  if (!groupId || !(await pushTo(groupId, buildExpiryMessage(due.map((x) => x.item))))) {
+    stats.errors.push('expiry: ส่ง LINE ไม่สำเร็จ');
+    return;
+  }
 
   for (const x of due) {
     await sb

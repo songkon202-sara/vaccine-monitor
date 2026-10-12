@@ -138,6 +138,21 @@ update public.devices set active = false where id = 'test-fridge';
 
 **5) ทดสอบหลังติดตั้งจริงบนตู้เย็นอย่างน้อย 1–2 วัน** ก่อนเชื่อถือระบบ
 
+## ส่วนเสริม (หลังติดตั้งครั้งแรก)
+
+### ค่าชดเชยเซนเซอร์ (สอบเทียบ)
+รัน `supabase/migrations/003_offset_heartbeat.sql` ใน SQL Editor **ก่อน** deploy ฟังก์ชัน `ingest` รุ่นใหม่
+วางเซนเซอร์คู่กับเทอร์โมมิเตอร์มาตรฐาน ถ้ามาตรฐานอ่านได้ 5.0°C แต่เซนเซอร์อ่านได้ 5.4°C:
+`update public.devices set temp_offset = -0.4 where id = 'fridge-1';`
+ค่าดิบเก็บใน `readings.raw_temp` ค่าที่ใช้แจ้งเตือน/รายงานคือ `readings.temp` (ค่าดิบ + ชดเชย)
+
+### เฝ้าระบบจากภายนอก (heartbeat)
+ถ้าระบบตรวจหยุดทำงาน (Supabase ล่ม/ถูกพัก, cron หยุด) หรือส่ง LINE ไม่ได้ (เช่น โควตาหมด) จะไม่มีแจ้งเตือนใดออกมาเลย
+จึงให้ `check-alerts` ส่งสัญญาณไปยัง [healthchecks.io](https://healthchecks.io) (ฟรี) ทุกนาที:
+1. สมัคร healthchecks.io สร้าง Check: Period 1 นาที, Grace 10 นาที, ตั้งอีเมลผู้รับ
+2. คัดลอก Ping URL ใส่ `HEARTBEAT_URL=` ใน `supabase/.env` แล้ว `npx supabase secrets set --env-file supabase/.env --project-ref <REF>`
+3. ถ้าไม่มีสัญญาณเกิน 10 นาที หรือรายงานว่าส่ง LINE ไม่สำเร็จ จะได้อีเมลเตือน
+
 ## ข้อควรรู้และข้อจำกัด
 - **โควตาข้อความ LINE:** แผนฟรีมีโควตารายเดือนจำกัด และการ push เข้ากลุ่มนับตามจำนวนสมาชิกที่ได้รับ
   (ตามเอกสาร LINE ส่วน reply ไม่นับ) ระบบจึงแจ้งเฉพาะตอนสถานะเปลี่ยน และกันส่งซ้ำชนิดเดียวกันภายใน 30 นาที

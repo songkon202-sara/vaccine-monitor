@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
 
   const { data: dev, error: e1 } = await sb
     .from('devices')
-    .select('id, api_key, active')
+    .select('id, api_key, active, temp_offset')
     .eq('id', deviceId)
     .maybeSingle();
   if (e1) {
@@ -36,11 +36,14 @@ Deno.serve(async (req) => {
   if (!dev || !dev.active || !safeEqual(String(dev.api_key), apiKey)) return json({ error: 'unauthorized' }, 401);
 
   const now = new Date().toISOString();
-  const rounded = Math.round(temp * 100) / 100;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const raw = r2(temp);
+  // ค่าที่ใช้ตัดสิน/แสดงผล = ค่าดิบ + ค่าชดเชยจากการสอบเทียบ
+  const rounded = r2(temp + (Number(dev.temp_offset) || 0));
 
   const { error: e2 } = await sb
     .from('readings')
-    .insert({ device_id: deviceId, temp: rounded, humidity, created_at: now });
+    .insert({ device_id: deviceId, temp: rounded, raw_temp: raw, humidity, created_at: now });
   if (e2) {
     console.error(e2);
     return json({ error: 'server error' }, 500);
