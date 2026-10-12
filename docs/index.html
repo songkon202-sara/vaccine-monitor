@@ -151,7 +151,7 @@
   <main class="wrap">
     <section id="tab-overview">
       <div id="overview" class="grid"></div>
-      <div class="foot">อัปเดตอัตโนมัติทุก 1 นาที · เส้นประคือช่วง 2–8°C · ช่วงที่กราฟขาดหมายถึงไม่ได้รับสัญญาณ</div>
+      <div class="foot">อัปเดตอัตโนมัติทุก 1 นาที · เส้นประคือช่วงอุณหภูมิปกติของแต่ละตู้ · ช่วงที่กราฟขาดหมายถึงไม่ได้รับสัญญาณ</div>
     </section>
 
     <section id="tab-alerts" hidden>
@@ -195,7 +195,7 @@
           <div><label for="rep-month">ประจำเดือน</label><input id="rep-month" type="month"></div>
           <div><button id="rep-print" class="btn primary" type="button" style="width:100%">พิมพ์ / บันทึก PDF</button></div>
         </div>
-        <div class="sub">ระบบเลือกค่าที่วัดได้ใกล้เวลา 08:30 และ 15:30 น. ที่สุด (ภายใน ±15 นาที) แล้วกากบาทลงช่องอุณหภูมิ (ปัดเป็นจำนวนเต็ม ค่าที่อยู่นอกช่วง 2–8°C จะไม่ถูกปัดเข้าช่องปกติ) ช่องสีเหลืองคือช่วงที่ต้องตรวจสอบ</div>
+        <div class="sub">ระบบเลือกค่าที่วัดได้ใกล้เวลา 08:30 และ 15:30 น. ที่สุด (ภายใน ±15 นาที) แล้วกากบาทลงช่องอุณหภูมิ (ปัดเป็นจำนวนเต็ม ค่าที่อยู่นอกเกณฑ์ของตู้จะไม่ถูกปัดเข้าช่องปกติ) ช่องสีเหลืองคือช่วงที่ต้องตรวจสอบ</div>
       </div>
       <div id="report"></div>
     </section>
@@ -368,7 +368,7 @@
           plugins: { legend: { display: false }, tooltip: { callbacks: { title: (it) => hhmm(it[0].parsed.x), label: (it) => `${it.parsed.y}°C` } } },
           scales: {
             x: { type: 'linear', min: from, max: now, ticks: { maxTicksLimit: 7, callback: (v) => hhmm(v) } },
-            y: { suggestedMin: 0, suggestedMax: 10, title: { display: true, text: '°C' } },
+            y: { suggestedMin: Number(d.min_temp) - 2, suggestedMax: Number(d.max_temp) + 2, title: { display: true, text: '°C' } },
           },
         },
       }));
@@ -479,17 +479,29 @@
   // เวลาอ่านค่า (เวลาไทย) และช่วงที่ยอมรับค่าที่วัดได้รอบเวลานั้น
   const LOG_TIMES = [{ h: 8, m: 30, label: 'เช้า 08.30 น.' }, { h: 15, m: 30, label: 'บ่าย 15.30 น.' }];
   const LOG_WINDOW_MIN = 15;
-  // คอลัมน์ตามแบบฟอร์ม: <-8, -8 ... 8, 9, >9  (ช่องปกติคือ 2–8)
-  const LOG_COLS = ['<-8', ...Array.from({ length: 17 }, (_, i) => String(i - 8)), '9', '>9'];
-  const isNormalCol = (c) => !c.includes('<') && !c.includes('>') && Number(c) >= 2 && Number(c) <= 8;
+  // คอลัมน์ของแบบฟอร์ม: ['<lo', lo ... hi, '>hi'] ช่องปกติ (สีขาว) คือ min_temp ถึง max_temp ของตู้
+  //   ตู้เย็น 2–8°C ใช้แบบฟอร์มมาตรฐาน: <-8, -8 ... 9, >9
+  //   ช่วงอื่น (เช่น ช่องแช่แข็ง -25 ถึง -15) ขยายข้างละ 3 องศา: <-28, -28 ... -12, >-12
   let reportShown = false;
 
-  function logCol(t) {
+  function logSpec(dev) {
+    const nmin = Math.ceil(Number(dev.min_temp)), nmax = Math.floor(Number(dev.max_temp));
+    const std = nmin === 2 && nmax === 8;
+    const lo = std ? -8 : nmin - 3, hi = std ? 9 : nmax + 3;
+    const cols = ['<' + lo];
+    for (let v = lo; v <= hi; v++) cols.push(String(v));
+    cols.push('>' + hi);
+    const below = nmin - lo + 1, normal = nmax - nmin + 1;   // จำนวนคอลัมน์ "ตรวจสอบ" ด้านต่ำ / "ปกติ"
+    return { lo, hi, nmin, nmax, cols, below, normal, above: cols.length - below - normal, freezer: nmax < 0 };
+  }
+  const isNormalCol = (sp, c) => !c.startsWith('<') && !c.startsWith('>') && Number(c) >= sp.nmin && Number(c) <= sp.nmax;
+
+  function logCol(sp, t) {
     let r = Math.round(t);
-    if (t < 2 && r >= 2) r = 1;   // ไม่ปัดค่าที่ต่ำกว่า 2°C เข้าช่องปกติ
-    if (t > 8 && r <= 8) r = 9;   // ไม่ปัดค่าที่สูงกว่า 8°C เข้าช่องปกติ
-    if (r < -8) return '<-8';
-    if (r > 9) return '>9';
+    if (t < sp.nmin && r >= sp.nmin) r = sp.nmin - 1;   // ไม่ปัดค่าที่ต่ำกว่าเกณฑ์เข้าช่องปกติ
+    if (t > sp.nmax && r <= sp.nmax) r = sp.nmax + 1;   // ไม่ปัดค่าที่สูงกว่าเกณฑ์เข้าช่องปกติ
+    if (r < sp.lo) return '<' + sp.lo;
+    if (r > sp.hi) return '>' + sp.hi;
     return String(r);
   }
 
@@ -530,31 +542,33 @@
 
   function logSheet(dev, y, mo, days, { best, pastKeys }) {
     const monthName = new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString('th-TH', { timeZone: 'UTC', month: 'long', year: 'numeric' });
-    const colHead = LOG_COLS.map((c) => `<th class="${isNormalCol(c) ? '' : 'y'}">${c}</th>`).join('');
+    const sp = logSpec(dev);
+    const ycls = (c) => (isNormalCol(sp, c) ? '' : 'y');
+    const colHead = sp.cols.map((c) => `<th class="${ycls(c)}">${c}</th>`).join('');
     const half = (d, k) => {
       const key = d + '-' + k, v = best[key];
-      const col = v ? logCol(v.temp) : null;
-      const cells = LOG_COLS.map((c) => `<td class="${isNormalCol(c) ? '' : 'y'}${c === col ? ' mark' : ''}"${c === col ? ` title="${v.temp.toFixed(1)}°C"` : ''}>${c === col ? '✕' : ''}</td>`).join('');
+      const col = v ? logCol(sp, v.temp) : null;
+      const cells = sp.cols.map((c) => `<td class="${ycls(c)}${c === col ? ' mark' : ''}"${c === col ? ` title="${v.temp.toFixed(1)}°C"` : ''}>${c === col ? '✕' : ''}</td>`).join('');
       const rec = v ? `ระบบ ${v.temp.toFixed(1)}°` : pastKeys.has(key) ? '<span class="miss">ไม่มีสัญญาณ</span>' : '';
       return { cells, rec };
     };
     let rows = '';
     for (let d = 1; d <= 31; d++) {
       if (d > days) {
-        const blank = LOG_COLS.map((c) => `<td class="${isNormalCol(c) ? '' : 'y'}"></td>`).join('');
+        const blank = sp.cols.map((c) => `<td class="${ycls(c)}"></td>`).join('');
         rows += `<tr><td class="rec"></td>${blank}<td class="day">${d}</td>${blank}<td class="rec"></td></tr>`;
         continue;
       }
       const a = half(d, 0), b = half(d, 1);
       rows += `<tr><td class="rec">${a.rec}</td>${a.cells}<td class="day">${d}</td>${b.cells}<td class="rec">${b.rec}</td></tr>`;
     }
-    const foot = `<td class="chk" colspan="11">ตรวจสอบ</td><td class="nrm" colspan="7">อุณหภูมิปกติ</td><td class="chk" colspan="2">ตรวจ<br>สอบ</td>`;
+    const foot = `<td class="chk" colspan="${sp.below}">ตรวจสอบ</td><td class="nrm" colspan="${sp.normal}">อุณหภูมิปกติ</td><td class="chk" colspan="${sp.above}">ตรวจ<br>สอบ</td>`;
     return `<div class="paper">
       <h3>แบบบันทึกอุณหภูมิ</h3>
-      <div class="meta">ตารางบันทึกอุณหภูมิตู้เย็น หมายเลข <u>&nbsp;${esc(dev.name)}${dev.location ? ' (' + esc(dev.location) + ')' : ''}&nbsp;</u> ประจำเดือน <u>&nbsp;${esc(monthName)}&nbsp;</u></div>
+      <div class="meta">ตารางบันทึกอุณหภูมิ${sp.freezer ? 'ช่องแช่แข็ง' : 'ตู้เย็น'} หมายเลข <u>&nbsp;${esc(dev.name)}${dev.location ? ' (' + esc(dev.location) + ')' : ''}&nbsp;</u> ประจำเดือน <u>&nbsp;${esc(monthName)}&nbsp;</u></div>
       <table class="log">
         <thead>
-          <tr><th class="rec" rowspan="2">ผู้จดบันทึก</th><th colspan="20"><i>อุณหภูมิ ${LOG_TIMES[0].label}</i></th><th class="day" rowspan="2">วันที่<br>บันทึก</th><th colspan="20"><i>อุณหภูมิ ${LOG_TIMES[1].label}</i></th><th class="rec" rowspan="2">ผู้จดบันทึก</th></tr>
+          <tr><th class="rec" rowspan="2">ผู้จดบันทึก</th><th colspan="${sp.cols.length}"><i>อุณหภูมิ ${LOG_TIMES[0].label} (ปกติ ${sp.nmin} ถึง ${sp.nmax}°C)</i></th><th class="day" rowspan="2">วันที่<br>บันทึก</th><th colspan="${sp.cols.length}"><i>อุณหภูมิ ${LOG_TIMES[1].label} (ปกติ ${sp.nmin} ถึง ${sp.nmax}°C)</i></th><th class="rec" rowspan="2">ผู้จดบันทึก</th></tr>
           <tr>${colHead}${colHead}</tr>
         </thead>
         <tbody>${rows}</tbody>
