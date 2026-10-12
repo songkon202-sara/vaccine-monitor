@@ -12,3 +12,7 @@ verify_jwt = false
 
 [functions.check-alerts]
 verify_jwt = false
+
+# manage-staff: ตรวจ access token ของผู้ใช้เองในฟังก์ชัน (sb.auth.getUser) และต้องเป็น admin
+[functions.manage-staff]
+verify_jwt = false

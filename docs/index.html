@@ -46,7 +46,8 @@
   header.top { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
   .top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; max-width: 1000px; margin: 0 auto; }
   .top-row h1 { font-size: 18px; margin: 0; }
-  .who { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .who { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  @media (max-width: 560px) { #who { display: none; } }
   nav.tabs { display: flex; gap: 4px; max-width: 1000px; margin: 0 auto; padding: 0 12px; overflow-x: auto; }
   nav.tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px; min-height: 44px; color: var(--muted); white-space: nowrap; }
   nav.tabs button[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 700; }
@@ -151,7 +152,7 @@
   <header class="top">
     <div class="top-row">
       <h1>🧊 เฝ้าระวังตู้เย็นวัคซีน</h1>
-      <div class="who"><span id="who"></span><button id="logout" class="btn small">ออกจากระบบ</button></div>
+      <div class="who"><span id="who"></span><button id="change-pw" class="btn small">เปลี่ยนรหัสผ่าน</button><button id="logout" class="btn small">ออกจากระบบ</button></div>
     </div>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="overview" aria-selected="true">ภาพรวม</button>
@@ -159,6 +160,7 @@
       <button role="tab" data-tab="lots" aria-selected="false">ทะเบียนวัคซีน</button>
       <button role="tab" data-tab="report" aria-selected="false">แบบบันทึกอุณหภูมิ</button>
       <button role="tab" data-tab="quality" aria-selected="false">คุณภาพการวัด</button>
+      <button role="tab" data-tab="members" aria-selected="false" id="tab-btn-members" hidden>สมาชิก</button>
     </nav>
   </header>
 
@@ -244,6 +246,27 @@
         <div class="table-wrap"><table class="cmp" id="cmp-table"></table></div>
       </div>
     </section>
+
+    <section id="tab-members" hidden>
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="margin-bottom:4px">เพิ่มสมาชิก</h2>
+        <div class="sub" style="margin-bottom:12px">สร้างบัญชีให้เจ้าหน้าที่ แล้วแจ้งอีเมลและรหัสผ่านเริ่มต้นให้ทางช่องทางส่วนตัว (ไม่ส่งในกลุ่ม) เจ้าหน้าที่เปลี่ยนรหัสผ่านเองได้ที่ปุ่ม "เปลี่ยนรหัสผ่าน" มุมขวาบน</div>
+        <form id="mem-form" class="lot">
+          <div><label for="mem-email">อีเมล</label><input id="mem-email" type="email" required autocomplete="off"></div>
+          <div><label for="mem-pw">รหัสผ่านเริ่มต้น (อย่างน้อย 8 ตัว)</label><input id="mem-pw" type="text" minlength="8" required autocomplete="off"></div>
+          <div><label for="mem-role">สิทธิ์</label><select id="mem-role"><option value="staff">เจ้าหน้าที่</option><option value="admin">ผู้ดูแลระบบ (จัดการสมาชิกได้)</option></select></div>
+          <div style="display:flex;gap:8px"><button class="btn" type="button" id="mem-gen" style="flex:1">สุ่มรหัส</button><button class="btn primary" type="submit" style="flex:2">เพิ่มสมาชิก</button></div>
+        </form>
+        <div id="mem-err" class="msg-err" role="alert"></div>
+      </div>
+      <div class="card table-wrap">
+        <h2 style="margin-bottom:8px">สมาชิกทั้งหมด</h2>
+        <table>
+          <thead><tr><th>อีเมล</th><th>สิทธิ์</th><th>สถานะ</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead>
+          <tbody id="mem-list"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -312,6 +335,7 @@
     destroyCharts();
     if (user) {
       $('#who').textContent = user.email;
+      checkAdmin();
       refresh();
       timer = setInterval(refresh, 60000);
     }
@@ -322,9 +346,10 @@
   document.querySelectorAll('nav.tabs button').forEach((b) => b.addEventListener('click', () => {
     currentTab = b.dataset.tab;
     document.querySelectorAll('nav.tabs button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
-    for (const t of ['overview', 'alerts', 'lots', 'report', 'quality']) $('#tab-' + t).hidden = t !== currentTab;
+    for (const t of ['overview', 'alerts', 'lots', 'report', 'quality', 'members']) $('#tab-' + t).hidden = t !== currentTab;
     reportShown = false;
     qualityShown = false;
+    membersShown = false;
     refresh();
   }));
 
@@ -337,6 +362,7 @@
       if (currentTab === 'lots') await renderLots();
       if (currentTab === 'report' && !reportShown) await renderReport();
       if (currentTab === 'quality' && !qualityShown) await renderQuality();
+      if (currentTab === 'members' && !membersShown) await renderMembers();
     } catch (e) {
       console.error(e);
     }
@@ -771,6 +797,110 @@
     box.innerHTML = head + body;
   }
   $('#cmp-month').addEventListener('change', renderCompleteness);
+
+  // ---------- members (สมาชิก) — ผู้ดูแลระบบเท่านั้น ----------
+  let membersShown = false;
+  let isAdmin = false;
+
+  async function checkAdmin() {
+    const { data } = await sb.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle();
+    isAdmin = data?.role === 'admin';
+    $('#tab-btn-members').hidden = !isAdmin;
+  }
+
+  async function staffApi(body) {
+    const { data, error } = await sb.functions.invoke('manage-staff', { body });
+    if (error) {
+      let msg = error.message;
+      try { msg = (await error.context.json()).error || msg; } catch (_) { /* ใช้ข้อความเดิม */ }
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function randomPassword() {
+    const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    const buf = new Uint32Array(10);
+    crypto.getRandomValues(buf);
+    return Array.from(buf, (n) => a[n % a.length]).join('');
+  }
+
+  async function renderMembers() {
+    const body = $('#mem-list');
+    try {
+      const { users, me } = await staffApi({ action: 'list' });
+      body.innerHTML = users.map((u) => {
+        const self = u.id === me;
+        const role = self
+          ? `<span class="pill ok">${u.role === 'admin' ? 'ผู้ดูแลระบบ' : 'เจ้าหน้าที่'}</span> <span class="sub">(คุณ)</span>`
+          : `<select data-role="${u.id}" style="min-height:36px;width:auto"><option value="staff"${u.role === 'staff' ? ' selected' : ''}>เจ้าหน้าที่</option><option value="admin"${u.role === 'admin' ? ' selected' : ''}>ผู้ดูแลระบบ</option></select>`;
+        const status = u.disabled ? '<span class="pill bad">ระงับ</span>' : '<span class="pill ok">ใช้งาน</span>';
+        const actions = self ? '' : `<div class="row-actions">
+            <button class="btn small" data-pw="${u.id}" data-email="${esc(u.email)}">ตั้งรหัสผ่านใหม่</button>
+            ${u.disabled ? `<button class="btn small" data-enable="${u.id}">เปิดใช้งาน</button>` : `<button class="btn small danger" data-disable="${u.id}" data-email="${esc(u.email)}">ระงับ</button>`}
+          </div>`;
+        return `<tr><td>${esc(u.email)}</td><td>${role}</td><td>${status}</td><td>${esc(u.last_sign_in_at ? fmt(u.last_sign_in_at) : 'ยังไม่เคย')}</td><td>${actions}</td></tr>`;
+      }).join('');
+      membersShown = true;
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="5" class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  $('#mem-gen').addEventListener('click', () => { $('#mem-pw').value = randomPassword(); });
+
+  $('#mem-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#mem-err').textContent = '';
+    const email = $('#mem-email').value.trim(), password = $('#mem-pw').value;
+    try {
+      await staffApi({ action: 'create', email, password, role: $('#mem-role').value });
+      alert(`เพิ่มสมาชิกแล้ว\n\nอีเมล: ${email}\nรหัสผ่าน: ${password}\n\nแจ้งเจ้าหน้าที่ทางช่องทางส่วนตัว และให้เปลี่ยนรหัสผ่านหลังเข้าใช้ครั้งแรก`);
+      e.target.reset();
+      renderMembers();
+    } catch (err) {
+      $('#mem-err').textContent = 'เพิ่มไม่สำเร็จ: ' + err.message;
+    }
+  });
+
+  $('#mem-list').addEventListener('change', async (e) => {
+    const id = e.target.dataset?.role;
+    if (!id) return;
+    try { await staffApi({ action: 'set_role', user_id: id, role: e.target.value }); }
+    catch (err) { alert('เปลี่ยนสิทธิ์ไม่สำเร็จ: ' + err.message); }
+    renderMembers();
+  });
+
+  $('#mem-list').addEventListener('click', async (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    try {
+      if (t.dataset.pw) {
+        const pw = prompt(`ตั้งรหัสผ่านใหม่ให้ ${t.dataset.email} (อย่างน้อย 8 ตัว)`, randomPassword());
+        if (pw === null) return;
+        await staffApi({ action: 'set_password', user_id: t.dataset.pw, password: pw });
+        alert(`ตั้งรหัสผ่านใหม่แล้ว: ${pw}\nแจ้งเจ้าหน้าที่ทางช่องทางส่วนตัว`);
+      } else if (t.dataset.disable) {
+        if (!confirm(`ระงับบัญชี ${t.dataset.email}? (จะเข้าสู่ระบบไม่ได้ ประวัติยังอยู่ครบ เปิดใช้คืนได้)`)) return;
+        await staffApi({ action: 'disable', user_id: t.dataset.disable });
+      } else if (t.dataset.enable) {
+        await staffApi({ action: 'enable', user_id: t.dataset.enable });
+      } else return;
+    } catch (err) {
+      alert('ไม่สำเร็จ: ' + err.message);
+    }
+    renderMembers();
+  });
+
+  // เปลี่ยนรหัสผ่านของตัวเอง (ทุกคน)
+  $('#change-pw').addEventListener('click', async () => {
+    const pw = prompt('รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)');
+    if (pw === null) return;
+    if (pw.length < 8) { alert('รหัสผ่านต้องยาวอย่างน้อย 8 ตัว'); return; }
+    if (prompt('พิมพ์รหัสผ่านใหม่อีกครั้ง') !== pw) { alert('รหัสผ่านไม่ตรงกัน'); return; }
+    const { error } = await sb.auth.updateUser({ password: pw });
+    alert(error ? 'เปลี่ยนไม่สำเร็จ: ' + error.message : 'เปลี่ยนรหัสผ่านแล้ว');
+  });
 })();
 </script>
 </body>

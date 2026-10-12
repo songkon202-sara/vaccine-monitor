@@ -18,7 +18,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = join(ROOT, 'supabase', '.env');
 const SQL_OUT = join(ROOT, 'supabase', 'setup.generated.sql');
 const DRY = process.argv.includes('--dry-run');
-const FUNCTIONS = ['ingest', 'check-alerts', 'line-webhook'];
+const FUNCTIONS = ['ingest', 'check-alerts', 'line-webhook', 'manage-staff'];
 const IS_WIN = process.platform === 'win32';
 
 function fail(msg) {
