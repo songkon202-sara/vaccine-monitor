@@ -132,6 +132,8 @@ async function handle(ev: LineEvent) {
     .update({ acked_at: new Date().toISOString(), acked_by: `${name} (LINE)` })
     .is('acked_at', null)
     .neq('kind', 'recovery')
+    // รับทราบเฉพาะเรื่องที่ส่งเข้ากลุ่มแล้ว เรื่องที่ยังรอคิวส่ง (กันส่งซ้ำ) จะยังถูกส่งและแจ้งซ้ำตามปกติ
+    .eq('push_status', 'sent')
     .select('id');
   if (error) throw error;
   await replyText(
