@@ -88,6 +88,33 @@
   .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .empty { text-align: center; color: var(--muted); padding: 32px 8px; }
   .foot { text-align: center; color: var(--muted); font-size: 13px; padding: 16px; }
+
+  /* monthly report (แบบบันทึกอุณหภูมิ) */
+  .report-tools { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; margin-bottom: 16px; }
+  .paper { background: #fff; color: #000; border-radius: 8px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
+  .paper h3 { text-align: center; margin: 0; font-size: 18px; }
+  .paper .meta { text-align: center; font-size: 14px; margin: 4px 0 8px; }
+  table.log { min-width: 980px; width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.log th, table.log td { border: 1px solid #000; padding: 0; height: 18px; text-align: center; vertical-align: middle; font-size: 10px; color: #000; font-weight: 400; line-height: 1.1; }
+  table.log .y { background: #fff59d; }
+  table.log .rec { background: #c9f1f7; width: 62px; font-size: 9px; }
+  table.log .day { width: 34px; font-weight: 700; background: #c9f1f7; }
+  table.log .mark { font-weight: 700; font-size: 12px; }
+  table.log .chk { background: #f2a03d; font-weight: 700; font-size: 12px; height: 34px; }
+  table.log .nrm { background: #fff; font-size: 11px; }
+  table.log .miss { color: #b3261e; }
+  .paper .note { font-size: 11px; margin-top: 6px; }
+  @media print {
+    @page { size: A4 landscape; margin: 7mm; }
+    body { background: #fff; }
+    header.top, .no-print, .foot { display: none !important; }
+    main.wrap { max-width: none; padding: 0; }
+    .paper { padding: 0; border-radius: 0; margin: 0; overflow: visible; break-after: page; }
+    .paper:last-child { break-after: auto; }
+    table.log { min-width: 0; }
+    table.log th, table.log td { height: 15.5px; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
 </style>
 </head>
 <body>
@@ -117,6 +144,7 @@
       <button role="tab" data-tab="overview" aria-selected="true">ภาพรวม</button>
       <button role="tab" data-tab="alerts" aria-selected="false">แจ้งเตือน<span id="alert-badge" class="badge" hidden></span></button>
       <button role="tab" data-tab="lots" aria-selected="false">ทะเบียนวัคซีน</button>
+      <button role="tab" data-tab="report" aria-selected="false">แบบบันทึกอุณหภูมิ</button>
     </nav>
   </header>
 
@@ -158,6 +186,18 @@
           <tbody id="lots"></tbody>
         </table>
       </div>
+    </section>
+
+    <section id="tab-report" hidden>
+      <div class="card no-print" style="margin-bottom:16px">
+        <div class="report-tools">
+          <div><label for="rep-device">ตู้เย็น</label><select id="rep-device"></select></div>
+          <div><label for="rep-month">ประจำเดือน</label><input id="rep-month" type="month"></div>
+          <div><button id="rep-print" class="btn primary" type="button" style="width:100%">พิมพ์ / บันทึก PDF</button></div>
+        </div>
+        <div class="sub">ระบบเลือกค่าที่วัดได้ใกล้เวลา 08:30 และ 15:30 น. ที่สุด (ภายใน ±15 นาที) แล้วกากบาทลงช่องอุณหภูมิ (ปัดเป็นจำนวนเต็ม ค่าที่อยู่นอกช่วง 2–8°C จะไม่ถูกปัดเข้าช่องปกติ) ช่องสีเหลืองคือช่วงที่ต้องตรวจสอบ</div>
+      </div>
+      <div id="report"></div>
     </section>
   </main>
 </div>
@@ -237,7 +277,8 @@
   document.querySelectorAll('nav.tabs button').forEach((b) => b.addEventListener('click', () => {
     currentTab = b.dataset.tab;
     document.querySelectorAll('nav.tabs button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
-    for (const t of ['overview', 'alerts', 'lots']) $('#tab-' + t).hidden = t !== currentTab;
+    for (const t of ['overview', 'alerts', 'lots', 'report']) $('#tab-' + t).hidden = t !== currentTab;
+    reportShown = false;
     refresh();
   }));
 
@@ -248,6 +289,7 @@
       if (currentTab === 'overview') await renderOverview();
       if (currentTab === 'alerts') await renderAlerts();
       if (currentTab === 'lots') await renderLots();
+      if (currentTab === 'report' && !reportShown) await renderReport();
     } catch (e) {
       console.error(e);
     }
@@ -258,6 +300,9 @@
     if (error) throw error;
     devices = data || [];
     $('#lot-device').innerHTML = '<option value="">ไม่ระบุ</option>' + devices.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+    const rep = $('#rep-device'), keep = rep.value;
+    rep.innerHTML = '<option value="">ทุกตู้ (ตู้ละ 1 หน้า)</option>' + devices.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+    rep.value = keep;
   }
 
   async function loadAlertBadge() {
@@ -429,6 +474,117 @@
     if (res.error) alert('บันทึกไม่สำเร็จ: ' + res.error.message);
     renderLots();
   });
+
+  // ---------- monthly temperature log (แบบบันทึกอุณหภูมิ) ----------
+  // เวลาอ่านค่า (เวลาไทย) และช่วงที่ยอมรับค่าที่วัดได้รอบเวลานั้น
+  const LOG_TIMES = [{ h: 8, m: 30, label: 'เช้า 08.30 น.' }, { h: 15, m: 30, label: 'บ่าย 15.30 น.' }];
+  const LOG_WINDOW_MIN = 15;
+  // คอลัมน์ตามแบบฟอร์ม: <-8, -8 ... 8, 9, >9  (ช่องปกติคือ 2–8)
+  const LOG_COLS = ['<-8', ...Array.from({ length: 17 }, (_, i) => String(i - 8)), '9', '>9'];
+  const isNormalCol = (c) => !c.includes('<') && !c.includes('>') && Number(c) >= 2 && Number(c) <= 8;
+  let reportShown = false;
+
+  function logCol(t) {
+    let r = Math.round(t);
+    if (t < 2 && r >= 2) r = 1;   // ไม่ปัดค่าที่ต่ำกว่า 2°C เข้าช่องปกติ
+    if (t > 8 && r <= 8) r = 9;   // ไม่ปัดค่าที่สูงกว่า 8°C เข้าช่องปกติ
+    if (r < -8) return '<-8';
+    if (r > 9) return '>9';
+    return String(r);
+  }
+
+  function bangkokMonth() {
+    return new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+  }
+
+  async function fetchLog(deviceId, y, mo, days) {
+    // ค่าเป้าหมายแต่ละวัน/เวลา เป็นเวลา UTC (ไทย = UTC+7)
+    const targets = [];
+    for (let d = 1; d <= days; d++) {
+      for (const [k, t] of LOG_TIMES.entries()) targets.push({ d, k, at: Date.UTC(y, mo - 1, d, t.h - 7, t.m) });
+    }
+    const past = targets.filter((t) => t.at - LOG_WINDOW_MIN * 60000 <= Date.now());
+    const best = {};
+    // ดึงเฉพาะช่วง ±15 นาทีรอบเวลาอ่านค่า แบ่งเป็นชุดเพื่อไม่ให้ URL ยาวเกิน
+    for (let i = 0; i < past.length; i += 16) {
+      const chunk = past.slice(i, i + 16);
+      const ors = chunk.map((t) => {
+        const a = new Date(t.at - LOG_WINDOW_MIN * 60000).toISOString();
+        const b = new Date(t.at + LOG_WINDOW_MIN * 60000).toISOString();
+        return `and(created_at.gte.${a},created_at.lte.${b})`;
+      }).join(',');
+      const { data, error } = await sb.from('readings').select('temp,created_at').eq('device_id', deviceId).or(ors).limit(1000);
+      if (error) throw error;
+      for (const r of data || []) {
+        const x = Date.parse(r.created_at);
+        for (const t of chunk) {
+          const dist = Math.abs(x - t.at);
+          if (dist > LOG_WINDOW_MIN * 60000) continue;
+          const key = t.d + '-' + t.k;
+          if (!best[key] || dist < best[key].dist) best[key] = { dist, temp: Number(r.temp) };
+        }
+      }
+    }
+    return { best, pastKeys: new Set(past.map((t) => t.d + '-' + t.k)) };
+  }
+
+  function logSheet(dev, y, mo, days, { best, pastKeys }) {
+    const monthName = new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString('th-TH', { timeZone: 'UTC', month: 'long', year: 'numeric' });
+    const colHead = LOG_COLS.map((c) => `<th class="${isNormalCol(c) ? '' : 'y'}">${c}</th>`).join('');
+    const half = (d, k) => {
+      const key = d + '-' + k, v = best[key];
+      const col = v ? logCol(v.temp) : null;
+      const cells = LOG_COLS.map((c) => `<td class="${isNormalCol(c) ? '' : 'y'}${c === col ? ' mark' : ''}"${c === col ? ` title="${v.temp.toFixed(1)}°C"` : ''}>${c === col ? '✕' : ''}</td>`).join('');
+      const rec = v ? `ระบบ ${v.temp.toFixed(1)}°` : pastKeys.has(key) ? '<span class="miss">ไม่มีสัญญาณ</span>' : '';
+      return { cells, rec };
+    };
+    let rows = '';
+    for (let d = 1; d <= 31; d++) {
+      if (d > days) {
+        const blank = LOG_COLS.map((c) => `<td class="${isNormalCol(c) ? '' : 'y'}"></td>`).join('');
+        rows += `<tr><td class="rec"></td>${blank}<td class="day">${d}</td>${blank}<td class="rec"></td></tr>`;
+        continue;
+      }
+      const a = half(d, 0), b = half(d, 1);
+      rows += `<tr><td class="rec">${a.rec}</td>${a.cells}<td class="day">${d}</td>${b.cells}<td class="rec">${b.rec}</td></tr>`;
+    }
+    const foot = `<td class="chk" colspan="11">ตรวจสอบ</td><td class="nrm" colspan="7">อุณหภูมิปกติ</td><td class="chk" colspan="2">ตรวจ<br>สอบ</td>`;
+    return `<div class="paper">
+      <h3>แบบบันทึกอุณหภูมิ</h3>
+      <div class="meta">ตารางบันทึกอุณหภูมิตู้เย็น หมายเลข <u>&nbsp;${esc(dev.name)}${dev.location ? ' (' + esc(dev.location) + ')' : ''}&nbsp;</u> ประจำเดือน <u>&nbsp;${esc(monthName)}&nbsp;</u></div>
+      <table class="log">
+        <thead>
+          <tr><th class="rec" rowspan="2">ผู้จดบันทึก</th><th colspan="20"><i>อุณหภูมิ ${LOG_TIMES[0].label}</i></th><th class="day" rowspan="2">วันที่<br>บันทึก</th><th colspan="20"><i>อุณหภูมิ ${LOG_TIMES[1].label}</i></th><th class="rec" rowspan="2">ผู้จดบันทึก</th></tr>
+          <tr>${colHead}${colHead}</tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td class="rec"></td>${foot}<td class="day"></td>${foot}<td class="rec"></td></tr></tfoot>
+      </table>
+      <div class="note">บันทึกอัตโนมัติจากเซนเซอร์ ✕ = ค่าที่วัดได้ใกล้เวลาที่กำหนดที่สุด (±${LOG_WINDOW_MIN} นาที) · "ไม่มีสัญญาณ" = ไม่ได้รับข้อมูลในช่วงเวลานั้น (เช่น ไฟดับ) · พิมพ์เมื่อ ${esc(fmt(new Date().toISOString()))}</div>
+    </div>`;
+  }
+
+  async function renderReport() {
+    const box = $('#report');
+    if (!$('#rep-month').value) $('#rep-month').value = bangkokMonth();
+    const [y, mo] = $('#rep-month').value.split('-').map(Number);
+    if (!y || !mo) { box.innerHTML = '<div class="empty">เลือกเดือน</div>'; return; }
+    const sel = $('#rep-device').value;
+    const list = sel ? devices.filter((d) => d.id === sel) : devices;
+    if (!list.length) { box.innerHTML = '<div class="empty">ยังไม่มีตู้เย็นในระบบ</div>'; return; }
+    box.innerHTML = '<div class="empty">กำลังโหลด...</div>';
+    const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    try {
+      const logs = await Promise.all(list.map((d) => fetchLog(d.id, y, mo, days)));
+      box.innerHTML = list.map((d, i) => logSheet(d, y, mo, days, logs[i])).join('');
+      reportShown = true;
+    } catch (e) {
+      box.innerHTML = `<div class="empty">โหลดข้อมูลไม่สำเร็จ: ${esc(e.message)}</div>`;
+    }
+  }
+  $('#rep-device').addEventListener('change', renderReport);
+  $('#rep-month').addEventListener('change', renderReport);
+  $('#rep-print').addEventListener('click', () => window.print());
 })();
 </script>
 </body>
