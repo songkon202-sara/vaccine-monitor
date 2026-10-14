@@ -7,6 +7,9 @@
     เหลือง (DATA) -> GPIO 4  และต่อตัวต้านทาน 4.7 kΩ ระหว่าง DATA กับ 3V3
     (โมดูลที่มีตัวต้านทานบนบอร์ดแล้วไม่ต้องต่อเพิ่ม)
 
+  บอร์ด NodeMCU (ESP8266) ใช้ได้เหมือนกัน: หัววัดตัวที่ 1 ที่ขา D4, ตัวที่ 2 ที่ขา D5
+  (ใน Arduino IDE เลือกบอร์ด "NodeMCU 1.0 (ESP-12E Module)")
+
   ตู้ที่มี 2 ช่อง (เช่น ช่องเย็น 2–8°C + ช่องแช่แข็ง) ใช้ ESP32 ตัวเดียว ต่อหัววัดตัวที่ 2:
     แดง -> 3V3, ดำ -> GND, เหลือง -> GPIO 18 และต่อตัวต้านทาน 4.7 kΩ ระหว่าง GPIO 18 กับ 3V3
   แล้วใส่ DEVICE_ID_2 / API_KEY_2 ใน secrets.h (แต่ละช่องเป็น "ตู้" แยกกันในระบบ)
@@ -25,16 +28,28 @@
   - ถ้าอ่านเซนเซอร์ไม่ได้ จะไม่ส่งค่า ฝั่งเซิร์ฟเวอร์จะเห็นว่าตู้ "เงียบ" และแจ้งเตือนขาดสัญญาณ
 */
 
+// รองรับทั้ง ESP32 และ ESP8266 (NodeMCU) — Arduino IDE เลือกให้เองตามบอร์ดที่เลือกไว้
+#if defined(ESP8266)
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#else
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#endif
+#include <WiFiClientSecure.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "secrets.h"
 
 // ---------- ค่าที่ปรับได้ ----------
-const int ONE_WIRE_PIN = 4;                          // ขา DATA ของ DS18B20 ตัวที่ 1
-const int ONE_WIRE_PIN_2 = 18;                       // ขา DATA ของ DS18B20 ตัวที่ 2 (ใช้เมื่อตั้ง DEVICE_ID_2)
+#if defined(ESP8266)
+// NodeMCU (ESP8266): ใช้ชื่อขาที่พิมพ์บนบอร์ด
+const int ONE_WIRE_PIN = D4;                         // ขา DATA ของ DS18B20 ตัวที่ 1 (ขา D4)
+const int ONE_WIRE_PIN_2 = D5;                       // ขา DATA ของ DS18B20 ตัวที่ 2 (ขา D5, ใช้เมื่อตั้ง DEVICE_ID_2)
+#else
+const int ONE_WIRE_PIN = 4;                          // ขา DATA ของ DS18B20 ตัวที่ 1 (GPIO 4)
+const int ONE_WIRE_PIN_2 = 18;                       // ขา DATA ของ DS18B20 ตัวที่ 2 (GPIO 18, ใช้เมื่อตั้ง DEVICE_ID_2)
+#endif
 const unsigned long SEND_INTERVAL_MS = 5UL * 60UL * 1000UL;  // ส่งทุก 5 นาที
 const unsigned long WIFI_GIVEUP_RESTART_MS = 10UL * 60UL * 1000UL;  // ต่อ Wi-Fi ไม่ได้นานเท่านี้ให้รีสตาร์ท
 const unsigned long DAILY_RESTART_MS = 24UL * 60UL * 60UL * 1000UL; // รีสตาร์ทวันละครั้งกันบอร์ดค้าง
