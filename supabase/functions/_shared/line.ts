@@ -3,10 +3,16 @@ import { admin as sb, safeEqual } from './supabase.ts';
 const API = 'https://api.line.me/v2/bot';
 const clip = (s: string) => (s.length > 4900 ? s.slice(0, 4900) + '…' : s);
 
+// สาเหตุล่าสุดที่ส่ง LINE ไม่สำเร็จ (เช่น "HTTP 429 ..." = โควตาหมด, "HTTP 401 ..." = โทเคนผิด/หมดอายุ)
+// ใส่ในข้อความ heartbeat เพื่อให้เห็นสาเหตุทันที ไม่ต้องเปิดดู log
+let lastLineError = '';
+export const getLastLineError = () => lastLineError;
+
 async function call(path: string, body: unknown): Promise<boolean> {
   const token = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? '';
   if (!token) {
     console.error('LINE_CHANNEL_ACCESS_TOKEN is not set');
+    lastLineError = 'ไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN';
     return false;
   }
   try {
@@ -16,12 +22,15 @@ async function call(path: string, body: unknown): Promise<boolean> {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      console.error('LINE API error', path, res.status, await res.text());
+      const detail = (await res.text()).slice(0, 160);
+      console.error('LINE API error', path, res.status, detail);
+      lastLineError = `HTTP ${res.status} ${detail}`;
       return false;
     }
     return true;
   } catch (e) {
     console.error('LINE API fetch failed', path, e);
+    lastLineError = `เชื่อมต่อ LINE ไม่ได้: ${e instanceof Error ? e.message : String(e)}`;
     return false;
   }
 }

@@ -27,7 +27,8 @@ interface LineEvent {
 const HELP = [
   'คำสั่งที่ใช้ได้',
   '• สถานะ — ดูสถานะตู้เย็นตอนนี้',
-  '• รับทราบ — ยืนยันว่ากำลังจัดการแจ้งเตือนที่ค้างอยู่',
+  '• รับทราบ — ยืนยันว่ากำลังจัดการแจ้งเตือนที่ค้างอยู่ (ทุกตู้)',
+  '• รับทราบ ตู้ 1 — รับทราบเฉพาะตู้ 1 (ตู้ 2 ก็เช่นกัน)',
   '• /myid — ดู LINE userId ของคุณ',
   '• ตั้งกลุ่มนี้ <รหัส> — ตั้งกลุ่มนี้เป็นกลุ่มรับแจ้งเตือน (ผู้ดูแลระบบ)',
 ].join('\n');
@@ -126,20 +127,36 @@ async function handle(ev: LineEvent) {
     return;
   }
 
+  // "รับทราบ ตู้ 1" = เฉพาะตู้ 1 (device id คือ fridge-1 และ fridge-1-...) ถ้าไม่ระบุตู้ = ทุกตู้เหมือนเดิม
+  const m = text.match(/ตู้\s*(\d+)/);
+  let onlyIds: string[] | null = null;
+  if (m) {
+    const n = m[1];
+    const { data: ds, error: e0 } = await sb.from('devices').select('id');
+    if (e0) throw e0;
+    onlyIds = (ds ?? []).map((x) => x.id as string).filter((id) => id === `fridge-${n}` || id.startsWith(`fridge-${n}-`));
+    if (onlyIds.length === 0) {
+      await replyText(token, `ไม่พบตู้ ${n} ในระบบ จึงยังไม่ได้บันทึกการรับทราบ (พิมพ์ "รับทราบ" เฉยๆ เพื่อรับทราบทุกตู้)`);
+      return;
+    }
+  }
+
   const name = await memberName(src);
-  const { data, error } = await sb
+  let q = sb
     .from('alerts')
     .update({ acked_at: new Date().toISOString(), acked_by: `${name} (LINE)` })
     .is('acked_at', null)
     .neq('kind', 'recovery')
     // รับทราบเฉพาะเรื่องที่ส่งเข้ากลุ่มแล้ว เรื่องที่ยังรอคิวส่ง (กันส่งซ้ำ) จะยังถูกส่งและแจ้งซ้ำตามปกติ
-    .eq('push_status', 'sent')
-    .select('id');
+    .eq('push_status', 'sent');
+  if (onlyIds) q = q.in('device_id', onlyIds);
+  const { data, error } = await q.select('id');
   if (error) throw error;
+  const scope = m ? ` ของตู้ ${m[1]}` : '';
   await replyText(
     token,
     data && data.length > 0
-      ? `✅ บันทึกการรับทราบ ${data.length} รายการ โดย ${name}`
-      : 'ไม่มีแจ้งเตือนที่รอรับทราบ',
+      ? `✅ บันทึกการรับทราบ ${data.length} รายการ${scope} โดย ${name}`
+      : `ไม่มีแจ้งเตือน${scope}ที่รอรับทราบ`,
   );
 }

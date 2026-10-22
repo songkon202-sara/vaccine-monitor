@@ -6,6 +6,10 @@ import {
   daysUntil,
   decideStatus,
   dueThresholds,
+  buildProbeDiffMessage,
+  buildReminder,
+  probesDisagree,
+  reminderDue,
   type DeviceRow,
 } from './logic.ts';
 
@@ -110,5 +114,44 @@ const msg = buildExpiryMessage([
 assert.ok(msg.indexOf('BCG') < msg.indexOf('MMR'), 'เรียงตามที่ใกล้หมดอายุก่อน');
 assert.ok(msg.includes('หมดอายุแล้ว 7 วัน') && msg.includes('อีก 30 วัน'));
 assert.ok(msg.includes('2569'), 'แสดงปี พ.ศ.');
+
+// ---- เกณฑ์วิกฤต (ค่าเดียวก็แจ้ง) ----
+const crit = { critical_high: 15, critical_low: 0 };
+assert.equal(decideStatus(dev({ ...crit, last_temp: 16 }), [16], NOW), 'temp_high', 'เกินวิกฤตแจ้งทันทีด้วยค่าเดียว');
+assert.equal(decideStatus(dev({ ...crit, last_temp: -0.5 }), [-0.5], NOW), 'temp_low');
+assert.equal(decideStatus(dev({ ...crit, last_temp: 9 }), [9], NOW), 'ok', 'เกิน 8 แต่ไม่ถึงวิกฤต ยังรอ 2 ค่า');
+assert.equal(decideStatus(dev({ last_temp: 40 }), [40], NOW), 'ok', 'ไม่ตั้งเกณฑ์วิกฤต = พฤติกรรมเดิม');
+assert.equal(decideStatus(dev({ ...crit, last_temp: 16, last_seen: min(20) }), [], NOW), 'offline', 'ขาดสัญญาณมาก่อน');
+const critMsg = buildTransition('ok', 'temp_high', dev({ ...crit, last_temp: 16 }), NOW);
+assert.ok(critMsg?.message.includes('วิกฤต 15'), 'ข้อความระบุว่าเกินเกณฑ์วิกฤต');
+const normMsg = buildTransition('ok', 'temp_high', dev({ ...crit, last_temp: 9 }), NOW);
+assert.ok(!normMsg?.message.includes('วิกฤต'), 'เกิน 8 แต่ไม่วิกฤต ไม่ใส่คำว่าวิกฤต');
+const offMsg = buildTransition('ok', 'offline', dev({ board_id: 'board-1', last_seen: min(20) }), NOW);
+assert.ok(offMsg?.message.includes('โพรบอื่น'), 'ตู้ที่มีหลายโพรบมีหมายเหตุรวมข้อความ');
+
+// ---- เตือนซ้ำ ----
+const cfg = { unackedMin: 30, ackedMin: 120, max: 8 };
+const st = (over = {}) => ({ acked_at: null, escalated_at: null, reminded_at: null, reminder_count: 0, ...over });
+assert.equal(reminderDue(st(), NOW, cfg), null, 'ยังไม่แจ้งซ้ำครั้งแรก ยังไม่เตือนซ้ำ');
+assert.equal(reminderDue(st({ escalated_at: min(29) }), NOW, cfg), null);
+assert.equal(reminderDue(st({ escalated_at: min(31) }), NOW, cfg), 'unacked');
+assert.equal(reminderDue(st({ escalated_at: min(90), reminded_at: min(10) }), NOW, cfg), null, 'นับจากครั้งล่าสุดที่เตือน');
+assert.equal(reminderDue(st({ escalated_at: min(90), reminded_at: min(31) }), NOW, cfg), 'unacked');
+assert.equal(reminderDue(st({ acked_at: min(60) }), NOW, cfg), null, 'รับทราบแล้ว รอ 2 ชม.');
+assert.equal(reminderDue(st({ acked_at: min(121) }), NOW, cfg), 'acked');
+assert.equal(reminderDue(st({ acked_at: min(300), reminded_at: min(30) }), NOW, cfg), null);
+assert.equal(reminderDue(st({ escalated_at: min(500), reminder_count: 8 }), NOW, cfg), null, 'ครบจำนวนครั้งสูงสุดแล้ว');
+const remMsg = buildReminder('unacked', dev({ status: 'offline', status_since: min(95), last_temp: 6.2 }), st({ reminder_count: 1 }), NOW);
+assert.ok(remMsg.includes('ครั้งที่ 2') && remMsg.includes('ยังไม่มีผู้รับทราบ'));
+const remMsg2 = buildReminder('acked', dev({ status: 'temp_high', status_since: min(200) }), st({ acked_by: 'สมชาย (LINE)' }), NOW);
+assert.ok(remMsg2.includes('สมชาย') && remMsg2.includes('ติดตามผล'));
+
+// ---- โพรบ 2 ตัวอ่านต่างกัน ----
+assert.equal(probesDisagree([5, 5.1, 5, 5.2], [5.5, 5.4, 5.6, 5.5]).disagree, false, 'ต่างกันน้อยกว่า 2');
+const pd = probesDisagree([5, 5.1, 5, 5.2], [8, 8.1, 8.2, 8], 2);
+assert.equal(pd.disagree, true);
+assert.ok(pd.diff < 0, 'A ต่ำกว่า B');
+assert.equal(probesDisagree([5, 5], [9, 9]).disagree, false, 'ข้อมูลไม่พอ (น้อยกว่า 4 ค่า) ไม่ตัดสิน');
+assert.ok(buildProbeDiffMessage('ตู้ 1 ช่องเย็น', 'ตู้ 1 ช่องเย็น (โพรบ 2)', 5, 8.4, 2).includes('8.4'));
 
 console.log('logic tests passed');
