@@ -1,5 +1,5 @@
 import { admin as sb, json } from '../_shared/supabase.ts';
-import { getGroupId, getLastLineError, multicast, pushTo } from '../_shared/line.ts';
+import { getGroupId, getLastLineError, getLastTelegramError, multicast, pushTo, telegramEnabled } from '../_shared/line.ts';
 import {
   bangkokHour,
   buildExpiryMessage,
@@ -85,7 +85,12 @@ async function heartbeat(stats: Stats) {
   try {
     await fetch(stats.errors.length ? `${url.replace(/\/$/, '')}/fail` : url, {
       method: 'POST',
-      body: JSON.stringify(stats),
+      // line_error ไม่ว่าง = ส่ง LINE พลาดล่าสุด (เช่น HTTP 429 = โควตาหมด) แม้ส่ง Telegram สำเร็จและระบบยังไม่ /fail
+      body: JSON.stringify({
+        ...stats,
+        line_error: getLastLineError(),
+        telegram: telegramEnabled() ? (getLastTelegramError() || 'ok') : 'ไม่ได้ตั้งค่า',
+      }),
       signal: AbortSignal.timeout(5000),
     });
   } catch (e) {
@@ -319,7 +324,18 @@ async function remind(stats: Stats) {
   const groupId = await getGroupId();
   const now = Date.now();
 
-  for (const a of data) {
+  // เตือนเฉพาะแจ้งเตือนล่าสุดของแต่ละช่อง+ชนิด (รายการเก่าที่ค้างอยู่ถูกปิดไม่ให้เตือนซ้ำ)
+  const seen = new Set<string>();
+  const sorted = [...data].sort((x, y) => (y.id as number) - (x.id as number));
+  for (const a of sorted) {
+    const key = `${a.device_id}|${a.kind}`;
+    if (seen.has(key)) {
+      if ((a.reminder_count as number) < REMIND.max) {
+        await sb.from('alerts').update({ reminder_count: REMIND.max }).eq('id', a.id);
+      }
+      continue;
+    }
+    seen.add(key);
     const d = a.device_id ? byId.get(a.device_id as string) : undefined;
     if (!d || d.status !== a.kind) continue; // เรื่องนี้จบแล้ว (กลับปกติ/สถานะเปลี่ยน)
     const mode = reminderDue(a, now, REMIND);

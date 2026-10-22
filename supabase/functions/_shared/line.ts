@@ -8,6 +8,50 @@ const clip = (s: string) => (s.length > 4900 ? s.slice(0, 4900) + '…' : s);
 let lastLineError = '';
 export const getLastLineError = () => lastLineError;
 
+// ช่องทางสำรอง Telegram (ฟรี ไม่มีโควตาข้อความ): ตั้ง TELEGRAM_BOT_TOKEN และ TELEGRAM_CHAT_ID แล้วทุกแจ้งเตือนจะส่งทั้ง LINE และ Telegram
+// ถ้าช่องทางใดช่องทางหนึ่งส่งสำเร็จ ถือว่าแจ้งเตือนถึงผู้รับแล้ว (กันโควตา LINE หมดแล้วไม่มีใครรู้)
+let lastTelegramError = '';
+export const getLastTelegramError = () => lastTelegramError;
+export const telegramEnabled = () => !!(Deno.env.get('TELEGRAM_BOT_TOKEN') && Deno.env.get('TELEGRAM_CHAT_ID'));
+
+async function telegramSend(text: string): Promise<boolean> {
+  const token = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
+  const chatId = Deno.env.get('TELEGRAM_CHAT_ID') ?? '';
+  if (!token || !chatId) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        // ถ้ากลุ่มเปิดโหมดหัวข้อ (Topics) ตั้ง TELEGRAM_THREAD_ID เพื่อส่งเข้าหัวข้อที่ต้องการ
+        ...(Deno.env.get('TELEGRAM_THREAD_ID') ? { message_thread_id: Number(Deno.env.get('TELEGRAM_THREAD_ID')) } : {}),
+        text: text.length > 4000 ? text.slice(0, 4000) + '…' : text,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      // ไม่ log URL (มี token) เฉพาะสถานะและข้อความจาก Telegram
+      const detail = (await res.text()).slice(0, 160);
+      console.error('Telegram API error', res.status, detail);
+      lastTelegramError = `HTTP ${res.status} ${detail}`;
+      return false;
+    }
+    lastTelegramError = '';
+    return true;
+  } catch (e) {
+    console.error('Telegram fetch failed', e instanceof Error ? e.message : 'unknown');
+    lastTelegramError = `เชื่อมต่อ Telegram ไม่ได้: ${e instanceof Error ? e.message : 'unknown'}`;
+    return false;
+  }
+}
+
+// ส่งทั้ง LINE และ Telegram พร้อมกัน สำเร็จอย่างใดอย่างหนึ่งก็ถือว่าสำเร็จ
+async function notify(line: Promise<boolean>, text: string): Promise<boolean> {
+  const [a, b] = await Promise.all([line, telegramSend(text)]);
+  return a || b;
+}
+
 async function call(path: string, body: unknown): Promise<boolean> {
   const token = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? '';
   if (!token) {
@@ -27,6 +71,7 @@ async function call(path: string, body: unknown): Promise<boolean> {
       lastLineError = `HTTP ${res.status} ${detail}`;
       return false;
     }
+    lastLineError = '';
     return true;
   } catch (e) {
     console.error('LINE API fetch failed', path, e);
@@ -37,11 +82,11 @@ async function call(path: string, body: unknown): Promise<boolean> {
 
 // push ไปยังกลุ่ม: LINE นับโควตาตามจำนวนสมาชิกที่ได้รับ
 export const pushTo = (to: string, text: string) =>
-  call('/message/push', { to, messages: [{ type: 'text', text: clip(text) }] });
+  notify(call('/message/push', { to, messages: [{ type: 'text', text: clip(text) }] }), text);
 
 export const multicast = (to: string[], text: string) =>
   to.length
-    ? call('/message/multicast', { to, messages: [{ type: 'text', text: clip(text) }] })
+    ? notify(call('/message/multicast', { to, messages: [{ type: 'text', text: clip(text) }] }), text)
     : Promise.resolve(false);
 
 // reply ไม่นับโควตาข้อความ
